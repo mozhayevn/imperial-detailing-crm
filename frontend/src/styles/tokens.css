@@ -1,0 +1,39 @@
+:root {
+  --background: 222 47% 5%;
+  --foreground: 210 40% 98%;
+
+  --surface-1: 222 42% 7%;
+  --surface-2: 222 38% 9%;
+  --surface-3: 222 34% 12%;
+
+  --border: 217 28% 17%;
+  --border-strong: 215 24% 25%;
+
+  --muted: 215 18% 57%;
+  --muted-foreground: 215 16% 70%;
+
+  --primary: 174 72% 48%;
+  --primary-foreground: 180 100% 7%;
+
+  --accent: 38 92% 58%;
+  --accent-foreground: 32 100% 8%;
+
+  --success: 142 70% 45%;
+  --warning: 38 92% 58%;
+  --danger: 0 78% 62%;
+  --info: 199 89% 58%;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+
+  --sidebar-width: 17.5rem;
+  --topbar-height: 4.25rem;
+
+  --shadow-soft: 0 18px 60px rgb(0 0 0 / 0.32);
+  --shadow-card: 0 14px 40px rgb(0 0 0 / 0.26);
+  --shadow-glow: 0 0 0 1px rgb(45 212 191 / 0.12),
+    0 20px 70px rgb(45 212 191 / 0.08);
+}
