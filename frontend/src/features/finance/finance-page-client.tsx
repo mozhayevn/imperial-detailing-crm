@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -45,6 +46,7 @@ import type {
 } from "@/src/features/finance/types";
 import { getApiErrorMessage } from "@/src/lib/api/errors";
 import { formatCurrency, formatDateTime } from "@/src/lib/formatters";
+import { routes } from "@/src/config/routes";
 
 const periodOptions: {
   value: FinancePeriod;
@@ -240,6 +242,48 @@ function getPaymentStatusTone(status: string) {
   return "muted";
 }
 
+function getFinanceResultTone(overview: FinanceOverview) {
+  if (overview.net_profit < 0) {
+    return "danger";
+  }
+
+  if (overview.accounts_receivable > 0 || overview.net_margin_percent < 10) {
+    return "warning";
+  }
+
+  return "success";
+}
+
+function getFinanceResultTitle(overview: FinanceOverview) {
+  if (overview.net_profit < 0) {
+    return "Период убыточный";
+  }
+
+  if (overview.accounts_receivable > 0) {
+    return "Есть прибыль, но есть долги клиентов";
+  }
+
+  return "Финансовый результат положительный";
+}
+
+function getFinanceResultDescription(overview: FinanceOverview) {
+  if (overview.net_profit < 0) {
+    return `Чистая прибыль отрицательная: ${formatCurrency(
+      overview.net_profit,
+    )}. Нужно проверить расходы, цены и себестоимость.`;
+  }
+
+  if (overview.accounts_receivable > 0) {
+    return `Чистая прибыль: ${formatCurrency(
+      overview.net_profit,
+    )}, но клиенты еще должны ${formatCurrency(overview.accounts_receivable)}.`;
+  }
+
+  return `Чистая прибыль за период: ${formatCurrency(
+    overview.net_profit,
+  )}. Дебиторки по зафиксированным заказам нет.`;
+}
+
 function getMarginTone(marginPercent: number) {
   if (marginPercent < 0) {
     return "danger";
@@ -250,6 +294,18 @@ function getMarginTone(marginPercent: number) {
   }
 
   return "success";
+}
+
+function getOrderMarginCardClass(order: FinanceOrderMargin) {
+  if (order.margin_percent < 0) {
+    return "border-[rgb(248_113_113_/_0.38)] bg-[rgb(248_113_113_/_0.06)]";
+  }
+
+  if (order.margin_percent < 15 || order.remaining_amount > 0) {
+    return "border-[rgb(251_191_36_/_0.32)] bg-[rgb(251_191_36_/_0.06)]";
+  }
+
+  return "border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]";
 }
 
 function buildFinanceInsights(overview: FinanceOverview): FinanceInsight[] {
@@ -467,6 +523,7 @@ export function FinancePageClient() {
 
   const [ordersMarginSort, setOrdersMarginSort] =
     useState<OrdersMarginSort>("created_desc");
+  const [showAllOrdersMargin, setShowAllOrdersMargin] = useState(false);
   const [charts, setCharts] = useState<FinanceCharts | null>(null);
   const financeInsights = overview ? buildFinanceInsights(overview) : [];
   const marginChartData = ordersMargin.slice(0, 8).map((order) => ({
@@ -512,6 +569,10 @@ export function FinancePageClient() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     });
+
+  const visibleOrdersMargin = showAllOrdersMargin
+    ? filteredOrdersMargin
+    : filteredOrdersMargin.slice(0, 10);
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -684,6 +745,55 @@ export function FinancePageClient() {
 
           {!isLoading && overview ? (
             <div className="space-y-6">
+              <Card>
+                <CardContent className="mt-5 p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <Badge tone={getFinanceResultTone(overview)}>
+                        Финансовый результат
+                      </Badge>
+
+                      <div className="mt-3 text-2xl font-semibold tracking-tight text-white">
+                        {getFinanceResultTitle(overview)}
+                      </div>
+
+                      <div className="mt-2 max-w-3xl text-sm leading-6 text-[hsl(var(--muted))]">
+                        {getFinanceResultDescription(overview)}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+                      <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3">
+                        <div className="text-xs text-[hsl(var(--muted))]">
+                          Чистая прибыль
+                        </div>
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          {formatCurrency(overview.net_profit)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3">
+                        <div className="text-xs text-[hsl(var(--muted))]">
+                          Чистая маржа
+                        </div>
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          {overview.net_margin_percent}%
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3">
+                        <div className="text-xs text-[hsl(var(--muted))]">
+                          Дебиторка
+                        </div>
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          {formatCurrency(overview.accounts_receivable)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1243,17 +1353,21 @@ export function FinancePageClient() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {filteredOrdersMargin.map((order) => (
+                      {visibleOrdersMargin.map((order) => (
                         <div
                           key={order.order_id}
-                          className="rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4 transition duration-200 hover:border-[rgb(45_212_191_/_0.24)] hover:shadow-lg hover:shadow-black/20"
+                          className={`rounded-3xl border p-4 transition duration-200 hover:border-[rgb(45_212_191_/_0.24)] hover:shadow-lg hover:shadow-black/20 ${getOrderMarginCardClass(order)}`}
                         >
                           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge tone="primary">
-                                  Заказ #{order.order_id}
-                                </Badge>
+                                <Link
+                                  href={routes.orderDetails(order.order_id)}
+                                >
+                                  <Badge tone="primary">
+                                    Заказ #{order.order_id}
+                                  </Badge>
+                                </Link>
 
                                 <Badge
                                   tone={getPaymentStatusTone(
@@ -1343,6 +1457,22 @@ export function FinancePageClient() {
                           </div>
                         </div>
                       ))}
+
+                      {filteredOrdersMargin.length > 10 ? (
+                        <div className="flex justify-center pt-3">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() =>
+                              setShowAllOrdersMargin((current) => !current)
+                            }
+                          >
+                            {showAllOrdersMargin
+                              ? "Скрыть часть заказов"
+                              : `Показать все заказы (${filteredOrdersMargin.length})`}
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </CardContent>
