@@ -1094,3 +1094,20 @@ class ResendTwoFactorResponse(BaseModel):
     challenge_id: int
     method: str
     destination_masked: str
+
+
+class FinanceOverviewResponse(BaseModel):
+    period: str
+
+    orders_revenue: int
+    cash_received: int
+    accounts_receivable: int
+    gross_profit: int
+
+    locked_orders_count: int
+    paid_orders_count: int
+    partial_orders_count: int
+    unpaid_orders_count: int
+
+    class Config:
+        from_attributes = True
