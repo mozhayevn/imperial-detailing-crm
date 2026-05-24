@@ -1104,6 +1104,11 @@ class FinanceOverviewResponse(BaseModel):
     accounts_receivable: int
     gross_profit: int
 
+    average_order_value: int
+    payment_rate_percent: int
+    gross_margin_percent: int
+    orders_with_debt_count: int
+
     locked_orders_count: int
     paid_orders_count: int
     partial_orders_count: int

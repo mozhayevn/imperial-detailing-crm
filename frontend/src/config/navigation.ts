@@ -9,6 +9,12 @@ export const mainNavigation: NavigationItem[] = [
     description: "Операционная сводка",
   },
   {
+    title: "Финансы",
+    href: routes.finance,
+    icon: "BadgeDollarSign",
+    description: "Выручка, оплаты и маржинальность",
+  },
+  {
     title: "Заказы",
     href: routes.orders,
     icon: "ClipboardList",

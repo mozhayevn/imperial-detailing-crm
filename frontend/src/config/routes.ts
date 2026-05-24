@@ -3,6 +3,7 @@ export const routes = {
   login: "/login",
 
   dashboard: "/dashboard",
+  finance: "/finance",
 
   profile: "/profile#profile",
   profileSecurity: "/profile#security",

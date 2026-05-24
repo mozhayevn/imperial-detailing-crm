@@ -58,33 +58,47 @@ def get_finance_overview(
     )
     locked_orders_query = apply_order_period(locked_orders_query, period_start)
 
-    locked_order_ids_subquery = locked_orders_query.with_entities(Order.id).subquery()
+    locked_orders = locked_orders_query.all()
+    locked_order_ids = [order.id for order in locked_orders]
+
+    if not locked_order_ids:
+        return FinanceOverviewResponse(
+            period=period,
+            orders_revenue=0,
+            cash_received=0,
+            accounts_receivable=0,
+            gross_profit=0,
+            average_order_value=0,
+            payment_rate_percent=0,
+            gross_margin_percent=0,
+            orders_with_debt_count=0,
+            locked_orders_count=0,
+            paid_orders_count=0,
+            partial_orders_count=0,
+            unpaid_orders_count=0,
+        )
 
     orders_revenue = int(
         db.query(func.coalesce(func.sum(Order.total_price), 0))
-        .filter(Order.id.in_(locked_order_ids_subquery))
+        .filter(Order.id.in_(locked_order_ids))
         .scalar()
         or 0
     )
 
-    cash_received = int(
-        apply_payment_period(
-            db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-                Payment.status == "completed",
-            ),
-            period_start,
-        ).scalar()
-        or 0
+    payment_query = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
+        Payment.status == "completed",
+        Payment.order_id.in_(locked_order_ids),
     )
+    payment_query = apply_payment_period(payment_query, period_start)
+
+    cash_received = int(payment_query.scalar() or 0)
 
     gross_profit = int(
         db.query(func.coalesce(func.sum(OrderItem.profit_snapshot * OrderItem.quantity), 0))
-        .filter(OrderItem.order_id.in_(locked_order_ids_subquery))
+        .filter(OrderItem.order_id.in_(locked_order_ids))
         .scalar()
         or 0
     )
-
-    locked_orders = locked_orders_query.all()
 
     paid_orders_count = 0
     partial_orders_count = 0
@@ -109,6 +123,19 @@ def get_finance_overview(
             paid_orders_count += 1
 
     accounts_receivable = max(orders_revenue - cash_received, 0)
+    orders_with_debt_count = partial_orders_count + unpaid_orders_count
+
+    average_order_value = 0
+    if locked_orders:
+        average_order_value = round(orders_revenue / len(locked_orders))
+
+    payment_rate_percent = 0
+    if orders_revenue > 0:
+        payment_rate_percent = min(round(cash_received / orders_revenue * 100), 100)
+
+    gross_margin_percent = 0
+    if orders_revenue > 0:
+        gross_margin_percent = round(gross_profit / orders_revenue * 100)
 
     return FinanceOverviewResponse(
         period=period,
@@ -116,6 +143,10 @@ def get_finance_overview(
         cash_received=cash_received,
         accounts_receivable=accounts_receivable,
         gross_profit=gross_profit,
+        average_order_value=average_order_value,
+        payment_rate_percent=payment_rate_percent,
+        gross_margin_percent=gross_margin_percent,
+        orders_with_debt_count=orders_with_debt_count,
         locked_orders_count=len(locked_orders),
         paid_orders_count=paid_orders_count,
         partial_orders_count=partial_orders_count,
