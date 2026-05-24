@@ -86,28 +86,36 @@ function getInitials(fullName: string) {
     .join("");
 }
 
-function getSessionDeviceLabel(userAgent: string | null) {
+function getSessionBrowserLabel(userAgent: string | null) {
   if (!userAgent) {
-    return "Неизвестное устройство";
+    return "Неизвестный браузер";
   }
 
-  if (userAgent.includes("Chrome")) {
-    return "Chrome";
-  }
-
-  if (userAgent.includes("Firefox")) {
-    return "Firefox";
-  }
-
-  if (userAgent.includes("Safari")) {
-    return "Safari";
-  }
-
-  if (userAgent.includes("Edg")) {
+  if (userAgent.includes("Edg/") || userAgent.includes("Edge/")) {
     return "Microsoft Edge";
   }
 
+  if (userAgent.includes("OPR/") || userAgent.includes("Opera/")) {
+    return "Opera";
+  }
+
+  if (userAgent.includes("Firefox/") || userAgent.includes("FxiOS/")) {
+    return "Firefox";
+  }
+
+  if (userAgent.includes("Chrome/") || userAgent.includes("CriOS/")) {
+    return "Google Chrome";
+  }
+
+  if (userAgent.includes("Safari/")) {
+    return "Safari";
+  }
+
   return "Браузер";
+}
+
+function getSessionBrowserKey(userAgent: string | null) {
+  return getSessionBrowserLabel(userAgent).toLowerCase();
 }
 
 function getPrivacyItems(profile: Profile): {
@@ -191,6 +199,82 @@ export function ProfilePageClient() {
     () => sessions.filter((session) => session.is_active),
     [sessions],
   );
+
+  const sessionGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        browser: string;
+        sessions: UserSession[];
+        activeCount: number;
+        totalCount: number;
+        latestSession: UserSession;
+        latestIpAddress: string | null;
+        firstCreatedAt: string;
+        lastSeenAt: string | null;
+        isActive: boolean;
+      }
+    >();
+
+    for (const session of sessions) {
+      const browser = getSessionBrowserLabel(session.user_agent);
+      const key = getSessionBrowserKey(session.user_agent);
+      const currentGroup = groups.get(key);
+
+      if (!currentGroup) {
+        groups.set(key, {
+          browser,
+          sessions: [session],
+          activeCount: session.is_active ? 1 : 0,
+          totalCount: 1,
+          latestSession: session,
+          latestIpAddress: session.ip_address,
+          firstCreatedAt: session.created_at,
+          lastSeenAt: session.last_seen_at,
+          isActive: session.is_active,
+        });
+
+        continue;
+      }
+
+      currentGroup.sessions.push(session);
+      currentGroup.totalCount += 1;
+
+      if (session.is_active) {
+        currentGroup.activeCount += 1;
+        currentGroup.isActive = true;
+      }
+
+      const currentLatestTime =
+        currentGroup.latestSession.last_seen_at ??
+        currentGroup.latestSession.created_at;
+
+      const sessionLatestTime = session.last_seen_at ?? session.created_at;
+
+      if (
+        new Date(sessionLatestTime).getTime() >
+        new Date(currentLatestTime).getTime()
+      ) {
+        currentGroup.latestSession = session;
+        currentGroup.latestIpAddress = session.ip_address;
+        currentGroup.lastSeenAt = session.last_seen_at;
+      }
+
+      if (
+        new Date(session.created_at).getTime() <
+        new Date(currentGroup.firstCreatedAt).getTime()
+      ) {
+        currentGroup.firstCreatedAt = session.created_at;
+      }
+    }
+
+    return Array.from(groups.values()).sort((left, right) => {
+      const leftTime = left.lastSeenAt ?? left.latestSession.created_at;
+      const rightTime = right.lastSeenAt ?? right.latestSession.created_at;
+
+      return new Date(rightTime).getTime() - new Date(leftTime).getTime();
+    });
+  }, [sessions]);
 
   const [twoFactorStatus, setTwoFactorStatus] =
     useState<TwoFactorStatus | null>(null);
@@ -472,6 +556,50 @@ export function ProfilePageClient() {
     }
   }
 
+  async function handleRevokeBrowserSessions(
+    browser: string,
+    browserSessions: UserSession[],
+  ) {
+    const activeBrowserSessions = browserSessions.filter(
+      (session) => session.is_active,
+    );
+
+    if (activeBrowserSessions.length === 0) {
+      return;
+    }
+
+    setRevokingSessionId(activeBrowserSessions[0].id);
+    setError(null);
+
+    try {
+      await Promise.all(
+        activeBrowserSessions.map((session) => revokeMySession(session.id)),
+      );
+
+      const revokedSessionIds = new Set(
+        activeBrowserSessions.map((session) => session.id),
+      );
+
+      setSessions((current) =>
+        current.map((session) =>
+          revokedSessionIds.has(session.id)
+            ? {
+                ...session,
+                is_active: false,
+                revoked_at: new Date().toISOString(),
+              }
+            : session,
+        ),
+      );
+
+      showSuccess(`Сессии ${browser} отключены.`);
+    } catch (revokeError) {
+      setError(getApiErrorMessage(revokeError));
+    } finally {
+      setRevokingSessionId(null);
+    }
+  }
+
   async function handleSendTwoFactorCode() {
     setIsSendingTwoFactorCode(true);
     setError(null);
@@ -722,18 +850,18 @@ export function ProfilePageClient() {
                   </div>
                 </div>
 
-                {sessions.length === 0 ? (
+                {sessionGroups.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-2))] p-5 text-center text-sm leading-6 text-[hsl(var(--muted))]">
                     Сессии пока не найдены.
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {sessions.map((session) => (
+                    {sessionGroups.map((group) => (
                       <div
-                        key={session.id}
+                        key={group.browser}
                         className={[
                           "rounded-2xl border p-3",
-                          session.is_active
+                          group.isActive
                             ? "border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]"
                             : "border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] opacity-70",
                         ].join(" ")}
@@ -741,43 +869,53 @@ export function ProfilePageClient() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="text-sm font-semibold text-white">
-                              {getSessionDeviceLabel(session.user_agent)}
+                              {group.browser}
                             </div>
 
                             <div className="mt-1 text-xs leading-5 text-[hsl(var(--muted))]">
-                              IP: {session.ip_address ?? "—"}
+                              Последний IP: {group.latestIpAddress ?? "—"}
+                            </div>
+
+                            <div className="mt-1 text-xs leading-5 text-[hsl(var(--muted))]">
+                              Активных входов: {group.activeCount} · Всего
+                              записей: {group.totalCount}
                             </div>
                           </div>
 
-                          <Badge tone={session.is_active ? "success" : "muted"}>
-                            {session.is_active ? "Активна" : "Отключена"}
+                          <Badge tone={group.isActive ? "success" : "muted"}>
+                            {group.isActive ? "Активна" : "Отключена"}
                           </Badge>
                         </div>
 
                         <div className="mt-3 text-xs leading-5 text-[hsl(var(--muted))]">
                           <div>
-                            Создана: {formatDateTime(session.created_at)}
+                            Первый вход: {formatDateTime(group.firstCreatedAt)}
                           </div>
                           <div>
                             Последняя активность:{" "}
-                            {session.last_seen_at
-                              ? formatDateTime(session.last_seen_at)
+                            {group.lastSeenAt
+                              ? formatDateTime(group.lastSeenAt)
                               : "—"}
                           </div>
                         </div>
 
-                        {session.is_active ? (
+                        {group.activeCount > 0 ? (
                           <Button
                             type="button"
                             variant="secondary"
                             size="sm"
                             className="mt-3"
-                            disabled={revokingSessionId === session.id}
-                            onClick={() => void handleRevokeSession(session.id)}
+                            disabled={revokingSessionId !== null}
+                            onClick={() =>
+                              void handleRevokeBrowserSessions(
+                                group.browser,
+                                group.sessions,
+                              )
+                            }
                           >
-                            {revokingSessionId === session.id
+                            {revokingSessionId !== null
                               ? "Отключаем..."
-                              : "Отключить"}
+                              : "Отключить браузер"}
                           </Button>
                         ) : null}
                       </div>
