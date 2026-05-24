@@ -564,3 +564,84 @@ class OrderPhoto(Base):
     @property
     def uploaded_by_user_full_name(self) -> str | None:
         return self.uploaded_by_user.full_name if self.uploaded_by_user else None
+
+
+class ExpenseCategory(Base):
+    __tablename__ = "expense_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    name = Column(String, nullable=False)
+    code = Column(String, unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BusinessExpense(Base):
+    __tablename__ = "business_expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    category_id = Column(Integer, ForeignKey("expense_categories.id"), nullable=False)
+
+    amount = Column(Integer, nullable=False)
+    expense_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    payment_method = Column(String, nullable=True)
+
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    category = relationship("ExpenseCategory")
+    created_by_user = relationship("User", foreign_keys=[created_by_user_id])
+    updated_by_user = relationship("User", foreign_keys=[updated_by_user_id])
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by_user_id])
+
+    @property
+    def category_name(self) -> str | None:
+        return self.category.name if self.category else None
+
+    @property
+    def created_by_user_full_name(self) -> str | None:
+        return self.created_by_user.full_name if self.created_by_user else None
+
+    @property
+    def updated_by_user_full_name(self) -> str | None:
+        return self.updated_by_user.full_name if self.updated_by_user else None
+
+    @property
+    def deleted_by_user_full_name(self) -> str | None:
+        return self.deleted_by_user.full_name if self.deleted_by_user else None
+
+
+class BusinessExpenseAuditLog(Base):
+    __tablename__ = "business_expense_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    expense_id = Column(Integer, ForeignKey("business_expenses.id"), nullable=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    action = Column(String, nullable=False)
+    details = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    expense = relationship("BusinessExpense")
+    actor_user = relationship("User")
+
+    @property
+    def actor_user_full_name(self) -> str | None:
+        return self.actor_user.full_name if self.actor_user else None

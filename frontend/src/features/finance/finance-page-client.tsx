@@ -56,7 +56,7 @@ function FinanceMetricCard({
 
   return (
     <div
-      className={`rounded-3xl border p-5 transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(45_212_191_/_0.35)] hover:shadow-lg hover:shadow-black/20 ${className}`}
+      className={`min-h-[150px] rounded-3xl border p-5 transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(45_212_191_/_0.35)] hover:shadow-lg hover:shadow-black/20 ${className}`}
     >
       <div className="text-xs font-medium text-[hsl(var(--muted))]">
         {title}
@@ -81,7 +81,7 @@ export function FinancePageClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const canReadFinance = canAccessByPermission(session, "payments.read");
+  const canReadFinance = canAccessByPermission(session, "finance.read");
 
   async function loadFinance(nextPeriod: FinancePeriod = period) {
     if (!canReadFinance) {
@@ -170,7 +170,7 @@ export function FinancePageClient() {
           <div className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">
             Для просмотра финансовой сводки нужен permission{" "}
             <span className="font-semibold text-[hsl(var(--muted-foreground))]">
-              payments.read
+              finance.read
             </span>
             .
           </div>
@@ -179,7 +179,7 @@ export function FinancePageClient() {
 
       {canReadFinance ? (
         <>
-          <div className="flex flex-wrap gap-2">
+          <div className="mb-6 flex flex-wrap gap-2">
             {periodOptions.map((option) => (
               <Button
                 key={option.value}
@@ -207,74 +207,127 @@ export function FinancePageClient() {
           ) : null}
 
           {!isLoading && overview ? (
-            <>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <FinanceMetricCard
-                  title="Выручка по заказам"
-                  value={formatCurrency(overview.orders_revenue)}
-                  description="Сумма зафиксированных заказов без отмененных."
-                  tone="success"
-                />
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Основные показатели</CardTitle>
+                  <CardDescription>
+                    Ключевые суммы за выбранный период.
+                  </CardDescription>
+                </CardHeader>
 
-                <FinanceMetricCard
-                  title="Получено оплат"
-                  value={formatCurrency(overview.cash_received)}
-                  description="Проведенные оплаты за выбранный период."
-                  tone="default"
-                />
+                <CardContent>
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <FinanceMetricCard
+                      title="Выручка по заказам"
+                      value={formatCurrency(overview.orders_revenue)}
+                      description="Сумма зафиксированных заказов без отмененных."
+                      tone="success"
+                    />
 
-                <FinanceMetricCard
-                  title="Дебиторка"
-                  value={formatCurrency(overview.accounts_receivable)}
-                  description="Разница между выручкой и полученными оплатами."
-                  tone={
-                    overview.accounts_receivable > 0 ? "warning" : "success"
-                  }
-                />
+                    <FinanceMetricCard
+                      title="Получено оплат"
+                      value={formatCurrency(overview.cash_received)}
+                      description="Проведенные оплаты за выбранный период."
+                      tone="default"
+                    />
 
-                <FinanceMetricCard
-                  title="Валовая прибыль"
-                  value={formatCurrency(overview.gross_profit)}
-                  description="Сумма зафиксированной прибыли по позициям заказов."
-                  tone={overview.gross_profit < 0 ? "danger" : "success"}
-                />
-              </div>
+                    <FinanceMetricCard
+                      title="Дебиторка"
+                      value={formatCurrency(overview.accounts_receivable)}
+                      description="Разница между выручкой и полученными оплатами."
+                      tone={
+                        overview.accounts_receivable > 0 ? "warning" : "success"
+                      }
+                    />
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <FinanceMetricCard
-                  title="Средний чек"
-                  value={formatCurrency(overview.average_order_value)}
-                  description="Средняя сумма одного зафиксированного заказа."
-                  tone="default"
-                />
+                    <FinanceMetricCard
+                      title="Валовая прибыль"
+                      value={formatCurrency(overview.gross_profit)}
+                      description="Сумма зафиксированной прибыли по позициям заказов."
+                      tone={overview.gross_profit < 0 ? "danger" : "success"}
+                    />
 
-                <FinanceMetricCard
-                  title="Процент оплаты"
-                  value={`${overview.payment_rate_percent}%`}
-                  description="Доля полученных оплат от суммы зафиксированных заказов."
-                  tone={
-                    overview.payment_rate_percent >= 80 ? "success" : "warning"
-                  }
-                />
+                    <FinanceMetricCard
+                      title="Расходы бизнеса"
+                      value={formatCurrency(overview.business_expenses)}
+                      description="Сумма расходов бизнеса за выбранный период."
+                      tone={
+                        overview.business_expenses > 0 ? "warning" : "default"
+                      }
+                    />
 
-                <FinanceMetricCard
-                  title="Маржа"
-                  value={`${overview.gross_margin_percent}%`}
-                  description="Доля валовой прибыли от выручки по заказам."
-                  tone={
-                    overview.gross_margin_percent < 15 ? "warning" : "success"
-                  }
-                />
+                    <FinanceMetricCard
+                      title="Чистая прибыль"
+                      value={formatCurrency(overview.net_profit)}
+                      description="Валовая прибыль за вычетом расходов бизнеса."
+                      tone={overview.net_profit < 0 ? "danger" : "success"}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-                <FinanceMetricCard
-                  title="Заказы с долгом"
-                  value={overview.orders_with_debt_count}
-                  description="Заказы, которые не оплачены полностью."
-                  tone={
-                    overview.orders_with_debt_count > 0 ? "warning" : "success"
-                  }
-                />
-              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Эффективность</CardTitle>
+                  <CardDescription>
+                    Средний чек, оплата, маржинальность и долги клиентов.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent>
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+                    <FinanceMetricCard
+                      title="Средний чек"
+                      value={formatCurrency(overview.average_order_value)}
+                      description="Средняя сумма одного зафиксированного заказа."
+                      tone="default"
+                    />
+
+                    <FinanceMetricCard
+                      title="Процент оплаты"
+                      value={`${overview.payment_rate_percent}%`}
+                      description="Доля полученных оплат от суммы зафиксированных заказов."
+                      tone={
+                        overview.payment_rate_percent >= 80
+                          ? "success"
+                          : "warning"
+                      }
+                    />
+
+                    <FinanceMetricCard
+                      title="Маржа"
+                      value={`${overview.gross_margin_percent}%`}
+                      description="Доля валовой прибыли от выручки по заказам."
+                      tone={
+                        overview.gross_margin_percent < 15
+                          ? "warning"
+                          : "success"
+                      }
+                    />
+
+                    <FinanceMetricCard
+                      title="Чистая маржа"
+                      value={`${overview.net_margin_percent}%`}
+                      description="Доля чистой прибыли от выручки по заказам."
+                      tone={
+                        overview.net_margin_percent < 10 ? "warning" : "success"
+                      }
+                    />
+
+                    <FinanceMetricCard
+                      title="Заказы с долгом"
+                      value={overview.orders_with_debt_count}
+                      description="Заказы, которые не оплачены полностью."
+                      tone={
+                        overview.orders_with_debt_count > 0
+                          ? "warning"
+                          : "success"
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader>
@@ -323,7 +376,7 @@ export function FinancePageClient() {
                   </div>
                 </CardContent>
               </Card>
-            </>
+            </div>
           ) : null}
         </>
       ) : null}

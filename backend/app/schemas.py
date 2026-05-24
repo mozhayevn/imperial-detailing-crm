@@ -1103,16 +1103,109 @@ class FinanceOverviewResponse(BaseModel):
     cash_received: int
     accounts_receivable: int
     gross_profit: int
+    business_expenses: int
+    net_profit: int
 
     average_order_value: int
     payment_rate_percent: int
     gross_margin_percent: int
+    net_margin_percent: int
     orders_with_debt_count: int
 
     locked_orders_count: int
     paid_orders_count: int
     partial_orders_count: int
     unpaid_orders_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class ExpenseCategoryCreate(BaseModel):
+    name: str
+    code: str
+    description: str | None = None
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class ExpenseCategoryUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class ExpenseCategoryResponse(BaseModel):
+    id: int
+    name: str
+    code: str
+    description: str | None = None
+    is_active: bool
+    sort_order: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BusinessExpenseCreate(BaseModel):
+    category_id: int
+    amount: int
+    expense_date: datetime | None = None
+    title: str
+    description: str | None = None
+    payment_method: str | None = None
+
+
+class BusinessExpenseUpdate(BaseModel):
+    category_id: int | None = None
+    amount: int | None = None
+    expense_date: datetime | None = None
+    title: str | None = None
+    description: str | None = None
+    payment_method: str | None = None
+
+
+class BusinessExpenseResponse(BaseModel):
+    id: int
+
+    category_id: int
+    category_name: str | None = None
+
+    amount: int
+    expense_date: datetime
+
+    title: str
+    description: str | None = None
+    payment_method: str | None = None
+
+    created_by_user_id: int
+    created_by_user_full_name: str | None = None
+
+    updated_by_user_id: int | None = None
+    updated_by_user_full_name: str | None = None
+
+    created_at: datetime
+    updated_at: datetime | None = None
+    is_deleted: bool
+    deleted_at: datetime | None = None
+    deleted_by_user_id: int | None = None
+    deleted_by_user_full_name: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class BusinessExpenseAuditLogResponse(BaseModel):
+    id: int
+    expense_id: int | None = None
+    actor_user_id: int
+    actor_user_full_name: str | None = None
+    action: str
+    details: str | None = None
+    created_at: datetime
 
     class Config:
         from_attributes = True

@@ -7,10 +7,13 @@ export type FinanceOverview = {
   cash_received: number;
   accounts_receivable: number;
   gross_profit: number;
+  business_expenses: number;
+  net_profit: number;
 
   average_order_value: number;
   payment_rate_percent: number;
   gross_margin_percent: number;
+  net_margin_percent: number;
   orders_with_debt_count: number;
 
   locked_orders_count: number;

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_permission
-from app.models import Order, OrderItem, Payment, User
+from app.models import BusinessExpense, Order, OrderItem, Payment, User
 from app.schemas import FinanceOverviewResponse
 
 router = APIRouter(prefix="/finance", tags=["Finance"])
@@ -48,7 +48,7 @@ def apply_payment_period(query, period_start: datetime | None):
 def get_finance_overview(
     period: str = Query("30d", pattern="^(today|7d|30d|all)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("payments.read")),
+    current_user: User = Depends(require_permission("finance.read")),
 ):
     period_start = get_period_start(period)
 
@@ -62,15 +62,27 @@ def get_finance_overview(
     locked_order_ids = [order.id for order in locked_orders]
 
     if not locked_order_ids:
+        expense_query = db.query(func.coalesce(func.sum(BusinessExpense.amount), 0)).filter(
+            BusinessExpense.is_deleted == False,
+        )
+        if period_start is not None:
+            expense_query = expense_query.filter(BusinessExpense.expense_date >= period_start)
+
+        business_expenses = int(expense_query.scalar() or 0)
+        net_profit = -business_expenses
+
         return FinanceOverviewResponse(
             period=period,
             orders_revenue=0,
             cash_received=0,
             accounts_receivable=0,
             gross_profit=0,
+            business_expenses=business_expenses,
+            net_profit=net_profit,
             average_order_value=0,
             payment_rate_percent=0,
             gross_margin_percent=0,
+            net_margin_percent=0,
             orders_with_debt_count=0,
             locked_orders_count=0,
             paid_orders_count=0,
@@ -122,7 +134,16 @@ def get_finance_overview(
         else:
             paid_orders_count += 1
 
+    expense_query = db.query(func.coalesce(func.sum(BusinessExpense.amount), 0)).filter(
+        BusinessExpense.is_deleted == False,
+    )
+    if period_start is not None:
+        expense_query = expense_query.filter(BusinessExpense.expense_date >= period_start)
+
+    business_expenses = int(expense_query.scalar() or 0)
+
     accounts_receivable = max(orders_revenue - cash_received, 0)
+    net_profit = gross_profit - business_expenses
     orders_with_debt_count = partial_orders_count + unpaid_orders_count
 
     average_order_value = 0
@@ -137,15 +158,22 @@ def get_finance_overview(
     if orders_revenue > 0:
         gross_margin_percent = round(gross_profit / orders_revenue * 100)
 
+    net_margin_percent = 0
+    if orders_revenue > 0:
+        net_margin_percent = round(net_profit / orders_revenue * 100)
+
     return FinanceOverviewResponse(
         period=period,
         orders_revenue=orders_revenue,
         cash_received=cash_received,
         accounts_receivable=accounts_receivable,
         gross_profit=gross_profit,
+        business_expenses=business_expenses,
+        net_profit=net_profit,
         average_order_value=average_order_value,
         payment_rate_percent=payment_rate_percent,
         gross_margin_percent=gross_margin_percent,
+        net_margin_percent=net_margin_percent,
         orders_with_debt_count=orders_with_debt_count,
         locked_orders_count=len(locked_orders),
         paid_orders_count=paid_orders_count,
