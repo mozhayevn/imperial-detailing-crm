@@ -15,6 +15,12 @@ export const mainNavigation: NavigationItem[] = [
     description: "Выручка, оплаты и маржинальность",
   },
   {
+    title: "Расходы",
+    href: routes.expenses,
+    icon: "ReceiptText",
+    description: "Расходы бизнеса",
+  },
+  {
     title: "Заказы",
     href: routes.orders,
     icon: "ClipboardList",

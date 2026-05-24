@@ -4,6 +4,7 @@ export const routes = {
 
   dashboard: "/dashboard",
   finance: "/finance",
+  expenses: "/expenses",
 
   profile: "/profile#profile",
   profileSecurity: "/profile#security",

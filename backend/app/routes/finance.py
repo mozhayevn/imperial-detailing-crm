@@ -2,12 +2,27 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import require_permission
-from app.models import BusinessExpense, Order, OrderItem, Payment, User
-from app.schemas import FinanceOverviewResponse
+from app.models import (
+    BusinessExpense,
+    Car,
+    Client,
+    ExpenseCategory,
+    Order,
+    OrderItem,
+    Payment,
+    User,
+)
+from app.schemas import (
+    FinanceChartMetricResponse,
+    FinanceChartsResponse,
+    FinanceDailyChartItemResponse,
+    FinanceOrderMarginResponse,
+    FinanceOverviewResponse,
+)
 
 router = APIRouter(prefix="/finance", tags=["Finance"])
 
@@ -42,6 +57,34 @@ def apply_payment_period(query, period_start: datetime | None):
         return query
 
     return query.filter(Payment.paid_at >= period_start)
+
+
+def get_payment_status(total_price: int, paid_amount: int) -> str:
+    if total_price <= 0:
+        return "Без суммы"
+
+    if paid_amount <= 0:
+        return "Не оплачено"
+
+    if paid_amount < total_price:
+        return "Частично оплачено"
+
+    if paid_amount == total_price:
+        return "Оплачено"
+
+    return "Переплата"
+
+
+def get_car_label(car: Car | None) -> str | None:
+    if not car:
+        return None
+
+    parts = [car.brand, car.model]
+
+    if car.plate_number:
+        parts.append(f"({car.plate_number})")
+
+    return " ".join(part for part in parts if part)
 
 
 @router.get("/overview", response_model=FinanceOverviewResponse)
@@ -179,4 +222,230 @@ def get_finance_overview(
         paid_orders_count=paid_orders_count,
         partial_orders_count=partial_orders_count,
         unpaid_orders_count=unpaid_orders_count,
+    )
+
+
+@router.get(
+    "/orders-margin",
+    response_model=list[FinanceOrderMarginResponse],
+)
+def get_orders_margin_report(
+    period: str = Query("30d", pattern="^(today|7d|30d|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance.read")),
+):
+    period_start = get_period_start(period)
+
+    orders_query = (
+        db.query(Order)
+        .options(
+            joinedload(Order.client),
+            joinedload(Order.car),
+        )
+        .filter(
+            Order.pricing_locked == True,
+            Order.status != "canceled",
+        )
+    )
+
+    orders_query = apply_order_period(orders_query, period_start)
+
+    orders = orders_query.order_by(Order.created_at.desc()).all()
+
+    result: list[FinanceOrderMarginResponse] = []
+
+    for order in orders:
+        paid_amount = int(
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(
+                Payment.order_id == order.id,
+                Payment.status == "completed",
+            )
+            .scalar()
+            or 0
+        )
+
+        base_cost = int(
+            db.query(func.coalesce(func.sum(OrderItem.base_cost_snapshot * OrderItem.quantity), 0))
+            .filter(OrderItem.order_id == order.id)
+            .scalar()
+            or 0
+        )
+
+        gross_profit = int(
+            db.query(func.coalesce(func.sum(OrderItem.profit_snapshot * OrderItem.quantity), 0))
+            .filter(OrderItem.order_id == order.id)
+            .scalar()
+            or 0
+        )
+
+        items_count = int(
+            db.query(func.count(OrderItem.id))
+            .filter(OrderItem.order_id == order.id)
+            .scalar()
+            or 0
+        )
+
+        margin_percent = 0
+        if order.total_price > 0:
+            margin_percent = round(gross_profit / order.total_price * 100)
+
+        remaining_amount = max(order.total_price - paid_amount, 0)
+
+        result.append(
+            FinanceOrderMarginResponse(
+                order_id=order.id,
+                status=order.status,
+                created_at=order.created_at,
+                scheduled_at=order.scheduled_at,
+                client_id=order.client_id,
+                client_full_name=order.client.full_name if order.client else None,
+                car_id=order.car_id,
+                car_label=get_car_label(order.car),
+                total_price=order.total_price,
+                paid_amount=paid_amount,
+                remaining_amount=remaining_amount,
+                payment_status=get_payment_status(order.total_price, paid_amount),
+                base_cost=base_cost,
+                gross_profit=gross_profit,
+                margin_percent=margin_percent,
+                items_count=items_count,
+                pricing_locked=order.pricing_locked,
+            )
+        )
+
+    return result
+
+
+def get_chart_dates(period: str, db: Session) -> list[datetime.date]:
+    today = datetime.utcnow().date()
+
+    if period == "today":
+        start_date = today
+    elif period == "7d":
+        start_date = today - timedelta(days=6)
+    elif period == "30d":
+        start_date = today - timedelta(days=29)
+    else:
+        dates = [
+            db.query(func.min(Order.created_at)).scalar(),
+            db.query(func.min(Payment.paid_at)).scalar(),
+            db.query(func.min(BusinessExpense.expense_date)).scalar(),
+        ]
+        existing_dates = [value.date() for value in dates if value is not None]
+        start_date = min(existing_dates) if existing_dates else today
+
+    days_count = (today - start_date).days + 1
+
+    return [start_date + timedelta(days=index) for index in range(days_count)]
+
+
+@router.get(
+    "/charts",
+    response_model=FinanceChartsResponse,
+)
+def get_finance_charts(
+    period: str = Query("30d", pattern="^(today|7d|30d|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance.read")),
+):
+    chart_dates = get_chart_dates(period, db)
+    period_start = get_period_start(period)
+
+    daily_items: list[FinanceDailyChartItemResponse] = []
+
+    for target_date in chart_dates:
+        day_start = datetime.combine(target_date, datetime.min.time())
+        day_end = day_start + timedelta(days=1)
+
+        orders_revenue = int(
+            db.query(func.coalesce(func.sum(Order.total_price), 0))
+            .filter(
+                Order.pricing_locked == True,
+                Order.status != "canceled",
+                Order.created_at >= day_start,
+                Order.created_at < day_end,
+            )
+            .scalar()
+            or 0
+        )
+
+        cash_received = int(
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .join(Order, Order.id == Payment.order_id)
+            .filter(
+                Payment.status == "completed",
+                Payment.paid_at >= day_start,
+                Payment.paid_at < day_end,
+                Order.pricing_locked == True,
+                Order.status != "canceled",
+            )
+            .scalar()
+            or 0
+        )
+
+        business_expenses = int(
+            db.query(func.coalesce(func.sum(BusinessExpense.amount), 0))
+            .filter(
+                BusinessExpense.is_deleted == False,
+                BusinessExpense.expense_date >= day_start,
+                BusinessExpense.expense_date < day_end,
+            )
+            .scalar()
+            or 0
+        )
+
+        gross_profit = int(
+            db.query(func.coalesce(func.sum(OrderItem.profit_snapshot * OrderItem.quantity), 0))
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(
+                Order.pricing_locked == True,
+                Order.status != "canceled",
+                Order.created_at >= day_start,
+                Order.created_at < day_end,
+            )
+            .scalar()
+            or 0
+        )
+
+        net_profit = gross_profit - business_expenses
+
+        daily_items.append(
+            FinanceDailyChartItemResponse(
+                label=target_date.strftime("%d.%m"),
+                date=target_date.isoformat(),
+                orders_revenue=orders_revenue,
+                cash_received=cash_received,
+                business_expenses=business_expenses,
+                gross_profit=gross_profit,
+                net_profit=net_profit,
+            )
+        )
+
+    expenses_query = (
+        db.query(
+            ExpenseCategory.name,
+            func.coalesce(func.sum(BusinessExpense.amount), 0),
+        )
+        .join(ExpenseCategory, ExpenseCategory.id == BusinessExpense.category_id)
+        .filter(BusinessExpense.is_deleted == False)
+    )
+
+    if period_start is not None:
+        expenses_query = expenses_query.filter(BusinessExpense.expense_date >= period_start)
+
+    expenses_by_category = [
+        FinanceChartMetricResponse(
+            label=row[0],
+            value=int(row[1] or 0),
+        )
+        for row in expenses_query.group_by(ExpenseCategory.name)
+        .order_by(func.coalesce(func.sum(BusinessExpense.amount), 0).desc())
+        .all()
+    ]
+
+    return FinanceChartsResponse(
+        period=period,
+        daily=daily_items,
+        expenses_by_category=expenses_by_category,
     )

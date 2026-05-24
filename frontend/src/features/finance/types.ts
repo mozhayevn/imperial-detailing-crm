@@ -21,3 +21,49 @@ export type FinanceOverview = {
   partial_orders_count: number;
   unpaid_orders_count: number;
 };
+
+export type FinanceOrderMargin = {
+  order_id: number;
+  status: string;
+  created_at: string;
+  scheduled_at: string | null;
+
+  client_id: number;
+  client_full_name: string | null;
+
+  car_id: number;
+  car_label: string | null;
+
+  total_price: number;
+  paid_amount: number;
+  remaining_amount: number;
+  payment_status: string;
+
+  base_cost: number;
+  gross_profit: number;
+  margin_percent: number;
+
+  items_count: number;
+  pricing_locked: boolean;
+};
+
+export type FinanceDailyChartItem = {
+  label: string;
+  date: string;
+  orders_revenue: number;
+  cash_received: number;
+  business_expenses: number;
+  gross_profit: number;
+  net_profit: number;
+};
+
+export type FinanceChartMetric = {
+  label: string;
+  value: number;
+};
+
+export type FinanceCharts = {
+  period: FinancePeriod;
+  daily: FinanceDailyChartItem[];
+  expenses_by_category: FinanceChartMetric[];
+};

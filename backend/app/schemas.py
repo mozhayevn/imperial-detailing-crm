@@ -1209,3 +1209,52 @@ class BusinessExpenseAuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FinanceOrderMarginResponse(BaseModel):
+    order_id: int
+    status: str
+    created_at: datetime
+    scheduled_at: datetime | None = None
+
+    client_id: int
+    client_full_name: str | None = None
+
+    car_id: int
+    car_label: str | None = None
+
+    total_price: int
+    paid_amount: int
+    remaining_amount: int
+    payment_status: str
+
+    base_cost: int
+    gross_profit: int
+    margin_percent: int
+
+    items_count: int
+    pricing_locked: bool
+
+    class Config:
+        from_attributes = True
+
+
+class FinanceDailyChartItemResponse(BaseModel):
+    label: str
+    date: str
+    orders_revenue: int
+    cash_received: int
+    business_expenses: int
+    gross_profit: int
+    net_profit: int
+
+
+class FinanceChartMetricResponse(BaseModel):
+    label: str
+    value: int
+
+
+class FinanceChartsResponse(BaseModel):
+    period: str
+    daily: list[FinanceDailyChartItemResponse]
+    expenses_by_category: list[FinanceChartMetricResponse]
