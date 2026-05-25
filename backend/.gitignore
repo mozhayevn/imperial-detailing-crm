@@ -32,3 +32,8 @@ frontend/.next/
 .DS_Store
 .idea/
 .vscode/
+
+# Database backups
+backend/backups/
+backups/
+*.dump
