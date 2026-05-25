@@ -46,6 +46,7 @@ export const routes = {
   adminUsers: "/admin/users",
   adminRoles: "/admin/roles",
   adminPermissions: "/admin/permissions",
+  userProfile: (userId: string | number) => `/users/${userId}`,
 
   leads: "/leads",
   inboundRequests: "/leads/inbound",

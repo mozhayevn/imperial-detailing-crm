@@ -292,7 +292,7 @@ export function DashboardPageClient() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Dashboard"
+        eyebrow="Панель"
         title="Панель управления"
         description="Операционная сводка по заказам, оплатам, производству и складу."
         actions={
@@ -418,7 +418,7 @@ export function DashboardPageClient() {
                 <MetricCard
                   title="Прибыль"
                   value={formatCurrency(summary.finance.total_profit)}
-                  description="По зафиксированным snapshots"
+                  description="По зафиксированным расчетам"
                   tone="success"
                 />
               </div>

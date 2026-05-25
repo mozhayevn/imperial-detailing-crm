@@ -6,6 +6,7 @@ from app.deps import require_permission, get_user_roles, get_user_permissions
 from app.models import User, Role, UserRole, UserRoleAuditLog
 from app.schemas import (
     UserCreate,
+    UserPublicProfileResponse,
     UserResponse,
     UserRoleAssign,
     MyPermissionsResponse,
@@ -19,6 +20,14 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 ADMIN_ALLOWED_ROLE_NAMES = {"manager", "master", "viewer"}
 
+ROLE_LEVELS = {
+    "viewer": 10,
+    "master": 40,
+    "manager": 50,
+    "admin": 80,
+    "super_admin": 100,
+}
+
 
 def get_user_role_names(user_id: int, db: Session) -> set[str]:
     rows = (
@@ -28,6 +37,35 @@ def get_user_role_names(user_id: int, db: Session) -> set[str]:
         .all()
     )
     return {row[0] for row in rows}
+
+
+def get_user_level(user: User, db: Session) -> int:
+    if user.is_super_admin:
+        return ROLE_LEVELS["super_admin"]
+
+    role_names = get_user_role_names(user.id, db)
+
+    if not role_names:
+        return 0
+
+    return max(ROLE_LEVELS.get(role_name, 0) for role_name in role_names)
+
+
+def can_view_full_user_profile(
+    current_user: User,
+    target_user: User,
+    db: Session,
+) -> bool:
+    if current_user.id == target_user.id:
+        return True
+
+    if current_user.is_super_admin:
+        return True
+
+    current_level = get_user_level(current_user, db)
+    target_level = get_user_level(target_user, db)
+
+    return current_level > target_level
 
 
 def can_manage_users(current_user: User, db: Session) -> bool:
@@ -149,6 +187,52 @@ def get_users(
         query = query.filter(User.is_super_admin == False)
 
     return query.order_by(User.id.desc()).all()
+
+
+@router.get("/{user_id}/public-profile", response_model=UserPublicProfileResponse)
+def get_user_public_profile(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("users.read")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    can_view_full_profile = can_view_full_user_profile(
+        current_user=current_user,
+        target_user=user,
+        db=db,
+    )
+
+    roles = sorted(list(get_user_role_names(user.id, db)))
+
+    show_phone = can_view_full_profile or user.privacy_show_phone
+    show_email = can_view_full_profile or user.privacy_show_email
+    show_activity = can_view_full_profile or user.privacy_show_activity
+    show_online_status = can_view_full_profile or user.privacy_show_online_status
+    show_order_load = can_view_full_profile or user.privacy_show_order_load
+    show_audit_history = can_view_full_profile or user.privacy_show_audit_history
+
+    return UserPublicProfileResponse(
+        id=user.id,
+        full_name=user.full_name,
+        avatar_url=user.avatar_url,
+        is_active=user.is_active,
+        is_super_admin=user.is_super_admin,
+        roles=roles,
+        email=user.email if show_email else None,
+        phone=user.phone if show_phone else None,
+        can_view_full_profile=can_view_full_profile,
+        privacy_show_phone=show_phone,
+        privacy_show_email=show_email,
+        privacy_show_activity=show_activity,
+        privacy_show_online_status=show_online_status,
+        privacy_show_order_load=show_order_load,
+        privacy_show_audit_history=show_audit_history,
+        created_at=user.created_at,
+    )
 
 
 @router.get("/{user_id}", response_model=UserResponse)

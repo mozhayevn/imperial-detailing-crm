@@ -1,6 +1,7 @@
 import { apiRequest } from "@/src/lib/api/client";
 import type {
   UserListItem,
+  UserPublicProfile,
   UserRolesResponse,
   UserWithRoles,
 } from "@/src/features/users/types";
@@ -39,4 +40,12 @@ export async function getUsersWithRoles(): Promise<UserWithRoles[]> {
   );
 
   return usersWithRoles;
+}
+
+export async function getUserPublicProfile(
+  userId: string | number,
+): Promise<UserPublicProfile> {
+  return apiRequest<UserPublicProfile>(`/users/${userId}/public-profile`, {
+    method: "GET",
+  });
 }
