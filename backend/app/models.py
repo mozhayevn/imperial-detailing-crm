@@ -645,3 +645,31 @@ class BusinessExpenseAuditLog(Base):
     @property
     def actor_user_full_name(self) -> str | None:
         return self.actor_user.full_name if self.actor_user else None
+
+
+class SecurityAuditLog(Base):
+    __tablename__ = "security_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    action = Column(String, nullable=False)
+    details = Column(Text, nullable=True)
+
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    actor_user = relationship("User", foreign_keys=[actor_user_id])
+    target_user = relationship("User", foreign_keys=[target_user_id])
+
+    @property
+    def actor_user_full_name(self) -> str | None:
+        return self.actor_user.full_name if self.actor_user else None
+
+    @property
+    def target_user_full_name(self) -> str | None:
+        return self.target_user.full_name if self.target_user else None

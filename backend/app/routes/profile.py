@@ -24,6 +24,7 @@ from app.schemas import (
     TwoFactorSendCodeRequest,
     TwoFactorStatusResponse,
 )
+from app.services.security_audit import write_security_audit_log
 from app.two_factor import (
     create_two_factor_challenge,
     mask_email,
@@ -176,6 +177,7 @@ def update_my_privacy(
 @router.post("/change-password")
 def change_my_password(
     data: ChangePasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -199,6 +201,17 @@ def change_my_password(
     current_user.hashed_password = get_password_hash(new_password)
     current_user.must_change_password = False
 
+    write_security_audit_log(
+        db=db,
+        action="password_changed",
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        request=request,
+        details={
+            "message": "Пользователь изменил пароль",
+        },
+    )
+
     db.commit()
 
     return {"message": "Password changed successfully"}
@@ -220,6 +233,7 @@ def get_my_sessions(
 @router.delete("/sessions/{session_id}")
 def revoke_my_session(
     session_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -237,6 +251,20 @@ def revoke_my_session(
 
     session.is_active = False
     session.revoked_at = datetime.utcnow()
+
+    write_security_audit_log(
+        db=db,
+        action="session_revoked",
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        request=request,
+        details={
+            "message": "Пользователь отключил активную сессию",
+            "session_id": session.id,
+            "session_user_agent": session.user_agent,
+            "session_ip_address": session.ip_address,
+        },
+    )
 
     db.commit()
 
@@ -259,6 +287,7 @@ def get_two_factor_status(
 @router.post("/2fa/send-code")
 def send_two_factor_setup_code(
     data: TwoFactorSendCodeRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -276,6 +305,21 @@ def send_two_factor_setup_code(
 
     send_two_factor_email(current_user.email, code)
 
+    write_security_audit_log(
+        db=db,
+        action="two_factor_setup_code_sent",
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        request=request,
+        details={
+            "message": "Пользователь запросил код для настройки двухфакторной защиты",
+            "method": "email",
+            "destination_masked": mask_email(current_user.email),
+        },
+    )
+
+    db.commit()
+
     return {
         "challenge_id": challenge.id,
         "method": "email",
@@ -286,6 +330,7 @@ def send_two_factor_setup_code(
 @router.post("/2fa/enable", response_model=TwoFactorStatusResponse)
 def enable_two_factor(
     data: TwoFactorEnableRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -302,6 +347,19 @@ def enable_two_factor(
     current_user.two_factor_method = "email"
     current_user.email_verified = True
 
+    write_security_audit_log(
+        db=db,
+        action="two_factor_enabled",
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        request=request,
+        details={
+            "message": "Пользователь включил двухфакторную защиту",
+            "method": "email",
+            "destination_masked": mask_email(current_user.email),
+        },
+    )
+
     db.commit()
     db.refresh(current_user)
 
@@ -317,6 +375,7 @@ def enable_two_factor(
 @router.post("/2fa/disable", response_model=TwoFactorStatusResponse)
 def disable_two_factor(
     data: TwoFactorDisableRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -325,6 +384,19 @@ def disable_two_factor(
 
     current_user.two_factor_enabled = False
     current_user.two_factor_method = None
+
+    write_security_audit_log(
+        db=db,
+        action="two_factor_disabled",
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        request=request,
+        details={
+            "message": "Пользователь отключил двухфакторную защиту",
+            "method": "email",
+            "destination_masked": mask_email(current_user.email),
+        },
+    )
 
     db.commit()
     db.refresh(current_user)

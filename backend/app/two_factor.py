@@ -181,9 +181,13 @@ def send_two_factor_email(email: str, code: str) -> None:
 """
 
     if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
-        #Too production
-        #do not print 2FA fallback codesin production logs
-        print(f"[2FA] Email code for {email}: {code}")
+        if settings.is_production:
+            raise HTTPException(
+                status_code=500,
+                detail="2FA email delivery is not configured",
+            )
+
+        print(f"[2FA] Development email code for {email}: {code}")
         return
 
     message = EmailMessage()
@@ -203,10 +207,14 @@ def send_two_factor_email(email: str, code: str) -> None:
 
             smtp.send_message(message)
     except Exception as error:
-        # Too production
-        # do not print 2FA fallback codesin production logs
+        if settings.is_production:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send 2FA email",
+            ) from error
+
         print(f"[2FA] Failed to send email to {email}: {error}")
-        print(f"[2FA] Fallback code for {email}: {code}")
+        print(f"[2FA] Development fallback code for {email}: {code}")
 
 
 def validate_two_factor_challenge(

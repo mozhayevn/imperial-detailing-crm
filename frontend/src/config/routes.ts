@@ -40,6 +40,7 @@ export const routes = {
   orderAudits: "/audits/orders",
   pricingAudits: "/audits/pricing",
   userRoleAudits: "/audits/users",
+  securityAudit: "/audits/security",
 
   admin: "/admin",
   adminUsers: "/admin/users",

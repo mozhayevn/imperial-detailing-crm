@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
+from app.config import settings
 from app.routes.clients import router as clients_router
 from app.routes.cars import router as cars_router
 from app.routes.services import router as services_router
@@ -24,7 +25,7 @@ from app.routes.payments import router as payments_router
 from app.routes.order_checklist import router as order_checklist_router
 from fastapi.staticfiles import StaticFiles
 from app.routes.order_photos import router as orders_photos_router
-from app.routes import material_stock, audit, dashboard, profile, finance, expenses
+from app.routes import material_stock, audit, dashboard, profile, finance, expenses, security_audit
 from pathlib import Path
 
 Base.metadata.create_all(bind=engine)
@@ -35,13 +36,9 @@ Path("uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
-
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials = True,
+    allow_origins=settings.frontend_origins_list,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,6 +70,7 @@ app.include_router(dashboard.router)
 app.include_router(profile.router)
 app.include_router(finance.router)
 app.include_router(expenses.router)
+app.include_router(security_audit.router)
 
 
 @app.get("/")

@@ -1258,3 +1258,24 @@ class FinanceChartsResponse(BaseModel):
     period: str
     daily: list[FinanceDailyChartItemResponse]
     expenses_by_category: list[FinanceChartMetricResponse]
+
+
+class SecurityAuditLogResponse(BaseModel):
+    id: int
+
+    actor_user_id: int | None = None
+    actor_user_full_name: str | None = None
+
+    target_user_id: int | None = None
+    target_user_full_name: str | None = None
+
+    action: str
+    details: str | None = None
+
+    ip_address: str | None = None
+    user_agent: str | None = None
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -6,6 +6,7 @@ from datetime import datetime
 import hashlib
 
 from app.database import get_db
+from app.config import settings
 from app.deps import get_current_active_user, get_user_roles, get_user_permissions
 from app.models import User, UserSession, TwoFactorChallenge
 from app.schemas import (
@@ -19,6 +20,12 @@ from app.schemas import (
     ResendTwoFactorResponse,
 )
 from app.security import verify_password, create_access_token
+from app.services.security_audit import write_security_audit_log
+from app.services.login_rate_limit import (
+    check_login_rate_limit,
+    clear_login_failures,
+    record_login_failure,
+)
 from app.two_factor import (
     create_two_factor_challenge,
     mask_email,
@@ -73,6 +80,20 @@ def finish_login(
     access_token = create_access_token(subject=str(user.id))
     create_user_session(user, access_token, request, db)
 
+    write_security_audit_log(
+        db=db,
+        action="login_success",
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        request=request,
+        details={
+            "message": "Пользователь успешно вошел в систему",
+            "two_factor_used": False,
+        },
+    )
+
+    db.commit()
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -80,9 +101,23 @@ def finish_login(
     }
 
 
+def set_auth_cookie(response: Response, access_token: str) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE,
+        secure=settings.COOKIE_SECURE,
+        domain=settings.COOKIE_DOMAIN,
+        path="/",
+        max_age=60 * settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    )
+
+
 def start_two_factor_login(
     user: User,
     db: Session,
+    request: Request | None = None,
 ) -> dict:
     challenge, code = create_two_factor_challenge(
         db=db,
@@ -91,6 +126,21 @@ def start_two_factor_login(
     )
 
     send_two_factor_email(user.email, code)
+
+    write_security_audit_log(
+        db=db,
+        action="two_factor_login_started",
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        request=request,
+        details={
+            "message": "Начат вход с двухфакторной защитой",
+            "method": challenge.method,
+            "destination_masked": mask_email(user.email),
+        },
+    )
+
+    db.commit()
 
     return {
         "requires_2fa": True,
@@ -127,10 +177,19 @@ def login_json(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    user = authenticate_user(data.email, data.password, db)
+    check_login_rate_limit(request, data.email)
+
+    try:
+        user = authenticate_user(data.email, data.password, db)
+    except HTTPException as error:
+        if error.status_code == status.HTTP_401_UNAUTHORIZED:
+            record_login_failure(request, data.email)
+        raise
+
+    clear_login_failures(request, data.email)
 
     if user.two_factor_enabled:
-        return start_two_factor_login(user, db)
+        return start_two_factor_login(user, db, request)
 
     return finish_login(user, request, db)
 
@@ -142,22 +201,23 @@ def login_form(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    user = authenticate_user(form_data.username, form_data.password, db)
+    check_login_rate_limit(request, form_data.username)
+
+    try:
+        user = authenticate_user(form_data.username, form_data.password, db)
+    except HTTPException as error:
+        if error.status_code == status.HTTP_401_UNAUTHORIZED:
+            record_login_failure(request, form_data.username)
+        raise
+
+    clear_login_failures(request, form_data.username)
 
     if user.two_factor_enabled:
-        return start_two_factor_login(user, db)
+        return start_two_factor_login(user, db, request)
 
     result = finish_login(user, request, db)
 
-    response.set_cookie(
-        key="access_token",
-        value=result["access_token"],
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-        max_age=60 * 60 * 24,
-    )
+    set_auth_cookie(response, result["access_token"])
 
     return result
 
@@ -169,24 +229,65 @@ def verify_two_factor_login(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    user = validate_two_factor_challenge(
+    try:
+        user = validate_two_factor_challenge(
+            db=db,
+            challenge_id=data.challenge_id,
+            code=data.code,
+        )
+    except HTTPException as error:
+        challenge = (
+            db.query(TwoFactorChallenge)
+            .filter(TwoFactorChallenge.id == data.challenge_id)
+            .first()
+        )
+
+        write_security_audit_log(
+            db=db,
+            action="two_factor_failed",
+            actor_user_id=challenge.user_id if challenge else None,
+            target_user_id=challenge.user_id if challenge else None,
+            request=request,
+            details={
+                "message": "Неудачная двухфакторная проверка",
+                "challenge_id": data.challenge_id,
+                "reason": error.detail,
+            },
+        )
+
+        db.commit()
+        raise
+
+    write_security_audit_log(
         db=db,
-        challenge_id=data.challenge_id,
-        code=data.code,
+        action="two_factor_verified",
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        request=request,
+        details={
+            "message": "Пользователь успешно прошел двухфакторную проверку",
+            "challenge_id": data.challenge_id,
+        },
     )
 
     access_token = create_access_token(subject=str(user.id))
     create_user_session(user, access_token, request, db)
 
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-        max_age=60 * 60 * 24,
+    write_security_audit_log(
+        db=db,
+        action="login_success",
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        request=request,
+        details={
+            "message": "Пользователь успешно вошел в систему",
+            "two_factor_used": True,
+        },
     )
+
+    db.commit()
+
+    set_auth_cookie(response, access_token)
 
     return {
         "access_token": access_token,
@@ -222,6 +323,7 @@ def get_my_permissions(
 @router.post("/resend-2fa", response_model=ResendTwoFactorResponse)
 def resend_two_factor_code(
     data: ResendTwoFactorRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     old_challenge = (
@@ -251,6 +353,23 @@ def resend_two_factor_code(
     )
 
     send_two_factor_email(user.email, code)
+
+    write_security_audit_log(
+        db=db,
+        action="two_factor_resend",
+        actor_user_id=user.id,
+        target_user_id=user.id,
+        request=request,
+        details={
+            "message": "Пользователь запросил повторную отправку 2FA-кода",
+            "old_challenge_id": old_challenge.id,
+            "new_challenge_id": challenge.id,
+            "method": challenge.method,
+            "destination_masked": mask_email(user.email),
+        },
+    )
+
+    db.commit()
 
     return ResendTwoFactorResponse(
         challenge_id=challenge.id,
