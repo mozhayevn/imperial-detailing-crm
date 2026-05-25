@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.safe_logging import safe_log_error, safe_log_warning
 from app.models import TwoFactorChallenge, User
 
 
@@ -182,12 +183,20 @@ def send_two_factor_email(email: str, code: str) -> None:
 
     if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
         if settings.is_production:
+            safe_log_error(
+                "2FA email delivery is not configured",
+                email=email,
+            )
             raise HTTPException(
                 status_code=500,
                 detail="2FA email delivery is not configured",
             )
 
-        print(f"[2FA] Development email code for {email}: {code}")
+        safe_log_warning(
+            "2FA development fallback code generated",
+            email=email,
+            two_factor_code=code,
+        )
         return
 
     message = EmailMessage()
@@ -208,13 +217,22 @@ def send_two_factor_email(email: str, code: str) -> None:
             smtp.send_message(message)
     except Exception as error:
         if settings.is_production:
+            safe_log_error(
+                "Failed to send 2FA email",
+                email=email,
+                error=str(error),
+            )
             raise HTTPException(
                 status_code=500,
                 detail="Failed to send 2FA email",
             ) from error
 
-        print(f"[2FA] Failed to send email to {email}: {error}")
-        print(f"[2FA] Development fallback code for {email}: {code}")
+        safe_log_warning(
+            "Failed to send 2FA email in development",
+            email=email,
+            error=str(error),
+            two_factor_code=code,
+        )
 
 
 def validate_two_factor_challenge(
