@@ -12,6 +12,7 @@ class LeadForm(StatesGroup):
     plate_number = State()
 
     service_name = State()
+    custom_service_name = State()
     preferred_time = State()
     comment = State()
 
