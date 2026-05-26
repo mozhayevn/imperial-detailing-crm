@@ -16,6 +16,7 @@ from app.telegram.keyboards import (
     start_keyboard,
 )
 from app.telegram.states import LeadForm
+from app.telegram.notifications import notify_managers_about_new_lead
 
 
 router = Router()
@@ -740,6 +741,12 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
             reply_markup=ReplyKeyboardRemove(),
         )
         return
+
+    await notify_managers_about_new_lead(
+        bot=message.bot,
+        created_lead=created_lead,
+        payload=payload,
+    )
 
     await state.clear()
 
