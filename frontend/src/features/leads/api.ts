@@ -7,6 +7,7 @@ import type {
   LeadContact,
   LeadCreatePayload,
   LeadStatus,
+  LeadMatches,
 } from "@/src/features/leads/types";
 
 export type GetLeadsParams = {
@@ -104,6 +105,14 @@ export async function getLeadContactLeads(
   leadContactId: string | number,
 ): Promise<Lead[]> {
   return apiRequest<Lead[]>(`/leads/contacts/${leadContactId}/leads`, {
+    method: "GET",
+  });
+}
+
+export async function getLeadMatches(
+  leadId: string | number,
+): Promise<LeadMatches> {
+  return apiRequest<LeadMatches>(`/leads/${leadId}/matches`, {
     method: "GET",
   });
 }

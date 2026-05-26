@@ -24,11 +24,13 @@ import {
   getLead,
   getLeadAuditLogs,
   updateLeadStatus,
+  getLeadMatches,
 } from "@/src/features/leads/api";
 import type {
   Lead,
   LeadAuditLog,
   LeadStatus,
+  LeadMatches,
 } from "@/src/features/leads/types";
 import { getServices } from "@/src/features/services/api";
 import type { Service } from "@/src/features/services/types";
@@ -179,6 +181,7 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [auditLogs, setAuditLogs] = useState<LeadAuditLog[]>([]);
+  const [matches, setMatches] = useState<LeadMatches | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedServiceIdByLeadItemId, setSelectedServiceIdByLeadItemId] =
     useState<Record<number, string>>({});
@@ -217,14 +220,17 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
     setError(null);
 
     try {
-      const [leadResult, auditResult, servicesResult] = await Promise.all([
-        getLead(leadId),
-        getLeadAuditLogs(leadId),
-        getServices(),
-      ]);
+      const [leadResult, auditResult, matchesResult, servicesResult] =
+        await Promise.all([
+          getLead(leadId),
+          getLeadAuditLogs(leadId),
+          getLeadMatches(leadId),
+          getServices(),
+        ]);
 
       setLead(leadResult);
       setAuditLogs(auditResult);
+      setMatches(matchesResult);
       setServices(servicesResult.filter((service) => service.is_active));
 
       setSelectedServiceIdByLeadItemId((current) => {
@@ -365,11 +371,13 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
       setError(null);
 
       try {
-        const [leadResult, auditResult, servicesResult] = await Promise.all([
-          getLead(leadId),
-          getLeadAuditLogs(leadId),
-          getServices(),
-        ]);
+        const [leadResult, auditResult, matchesResult, servicesResult] =
+          await Promise.all([
+            getLead(leadId),
+            getLeadAuditLogs(leadId),
+            getLeadMatches(leadId),
+            getServices(),
+          ]);
 
         if (!isMounted) {
           return;
@@ -377,6 +385,7 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
         setLead(leadResult);
         setAuditLogs(auditResult);
+        setMatches(matchesResult);
         setServices(servicesResult.filter((service) => service.is_active));
 
         setSelectedServiceIdByLeadItemId((current) => {
@@ -464,6 +473,101 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
       {!isLoading && lead ? (
         <div className="space-y-5">
+          {matches ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Проверка совпадений</CardTitle>
+                <CardDescription>
+                  CRM проверяет телефон, госномер и активные заявки перед
+                  созданием заказа.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent>
+                {matches.existing_client_id ||
+                matches.existing_car_id ||
+                matches.active_duplicate_lead_ids.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {matches.existing_client_id ? (
+                      <div className="rounded-2xl border border-[rgb(45_212_191_/_0.22)] bg-[rgb(45_212_191_/_0.08)] p-4">
+                        <div className="text-xs text-[rgb(94_234_212)]">
+                          Клиент уже есть
+                        </div>
+
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          #{matches.existing_client_id} ·{" "}
+                          {matches.existing_client_full_name}
+                        </div>
+
+                        <div className="mt-3 text-xs leading-5 text-[hsl(var(--muted))]">
+                          При подтверждении заявки CRM использует существующего
+                          клиента по телефону.
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {matches.existing_car_id ? (
+                      <div className="rounded-2xl border border-[rgb(251_191_36_/_0.24)] bg-[rgb(251_191_36_/_0.08)] p-4">
+                        <div className="text-xs text-[rgb(253_224_71)]">
+                          Машина уже есть
+                        </div>
+
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          #{matches.existing_car_id} ·{" "}
+                          {matches.existing_car_label}
+                        </div>
+
+                        <div className="mt-3 text-xs leading-5 text-[hsl(var(--muted))]">
+                          Если машина принадлежит этому же клиенту, CRM
+                          использует ее при подтверждении.
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {matches.active_duplicate_lead_ids.length > 0 ? (
+                      <div className="rounded-2xl border border-[rgb(248_113_113_/_0.24)] bg-[rgb(248_113_113_/_0.08)] p-4">
+                        <div className="text-xs text-[rgb(252_165_165)]">
+                          Есть активные заявки
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {matches.active_duplicate_lead_ids.map(
+                            (duplicateLeadId) => (
+                              <Link
+                                key={duplicateLeadId}
+                                href={routes.leadDetails(duplicateLeadId)}
+                              >
+                                <Button type="button" variant="secondary">
+                                  Заявка #{duplicateLeadId}
+                                </Button>
+                              </Link>
+                            ),
+                          )}
+                        </div>
+
+                        <div className="mt-3 text-xs leading-5 text-[hsl(var(--muted))]">
+                          Проверьте активные заявки, чтобы случайно не создать
+                          дубль.
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[rgb(74_222_128_/_0.22)] bg-[rgb(74_222_128_/_0.08)] p-4">
+                    <div className="text-sm font-semibold text-white">
+                      Дублей не найдено
+                    </div>
+
+                    <div className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">
+                      CRM не нашла клиента с таким телефоном, машину с таким
+                      госномером или другие активные заявки по этому номеру.
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent className="p-6">
               <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -535,7 +639,9 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
                     </Button>
                   ) : null}
 
-                  {canConfirmLeads && lead.status !== "confirmed" ? (
+                  {canConfirmLeads &&
+                  !lead.created_order_id &&
+                  lead.status !== "confirmed" ? (
                     <Button
                       type="button"
                       disabled={isConfirming || lead.items.length === 0}
@@ -554,6 +660,29 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
               </div>
             </CardContent>
           </Card>
+
+          {lead.created_order_id ? (
+            <Card>
+              <CardContent className="p-5">
+                <div className="mt-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">
+                      Заказ успешно создан
+                    </div>
+
+                    <div className="mt-2 text-sm leading-6 text-[hsl(var(--muted))]">
+                      Эта заявка уже подтверждена и связана с заказом #
+                      {lead.created_order_id}.
+                    </div>
+                  </div>
+
+                  <Link href={routes.orderDetails(lead.created_order_id)}>
+                    <Button type="button">Открыть заказ</Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             <div className="space-y-5">

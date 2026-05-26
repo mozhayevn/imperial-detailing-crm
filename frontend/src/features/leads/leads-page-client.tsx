@@ -26,6 +26,15 @@ import { formatDateTime } from "@/src/lib/formatters";
 
 type LeadStatusFilter = LeadStatus | "all";
 
+type LeadSourceFilter =
+  | "all"
+  | "manual"
+  | "telegram"
+  | "whatsapp"
+  | "instagram"
+  | "website"
+  | "bot";
+
 const leadStatusOptions: {
   value: LeadStatusFilter;
   label: string;
@@ -36,6 +45,19 @@ const leadStatusOptions: {
   { value: "confirmed", label: "Подтвержденные" },
   { value: "rejected", label: "Отклоненные" },
   { value: "duplicate", label: "Дубли" },
+];
+
+const leadSourceOptions: {
+  value: LeadSourceFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "Все источники" },
+  { value: "manual", label: "Ручные" },
+  { value: "telegram", label: "Telegram" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "instagram", label: "Instagram" },
+  { value: "website", label: "Сайт" },
+  { value: "bot", label: "Бот" },
 ];
 
 function getLeadStatusLabel(status: string) {
@@ -129,6 +151,7 @@ export function LeadsPageClient() {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [status, setStatus] = useState<LeadStatusFilter>("all");
+  const [source, setSource] = useState<LeadSourceFilter>("all");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,10 +178,23 @@ export function LeadsPageClient() {
   }, [leads, search]);
 
   const newCount = leads.filter((lead) => lead.status === "new").length;
-  const inReviewCount = leads.filter((lead) => lead.status === "in_review").length;
-  const confirmedCount = leads.filter((lead) => lead.status === "confirmed").length;
+  const inReviewCount = leads.filter(
+    (lead) => lead.status === "in_review",
+  ).length;
+  const confirmedCount = leads.filter(
+    (lead) => lead.status === "confirmed",
+  ).length;
+  const rejectedCount = leads.filter(
+    (lead) => lead.status === "rejected",
+  ).length;
+  const duplicateCount = leads.filter(
+    (lead) => lead.status === "duplicate",
+  ).length;
 
-  async function loadLeads(nextStatus: LeadStatusFilter = status) {
+  async function loadLeads(
+    nextStatus: LeadStatusFilter = status,
+    nextSource: LeadSourceFilter = source,
+  ) {
     if (!canReadLeads) {
       setIsLoading(false);
       return;
@@ -170,6 +206,7 @@ export function LeadsPageClient() {
     try {
       const result = await getLeads({
         status: nextStatus,
+        source: nextSource === "all" ? undefined : nextSource,
       });
 
       setLeads(result);
@@ -198,6 +235,7 @@ export function LeadsPageClient() {
       try {
         const result = await getLeads({
           status,
+          source: source === "all" ? undefined : source,
         });
 
         if (!isMounted) {
@@ -221,7 +259,7 @@ export function LeadsPageClient() {
     return () => {
       isMounted = false;
     };
-  }, [canReadLeads, status]);
+  }, [canReadLeads, status, source]);
 
   return (
     <PageContainer>
@@ -231,6 +269,12 @@ export function LeadsPageClient() {
         description="Заявки из ручного ввода и будущих чат-ботов. Заказы создаются только после подтверждения."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Link href={routes.leadContacts}>
+              <Button type="button" variant="secondary">
+                Контакты заявок
+              </Button>
+            </Link>
+
             <Link href={routes.newLead}>
               <Button type="button">Создать заявку</Button>
             </Link>
@@ -265,10 +309,10 @@ export function LeadsPageClient() {
 
       {canReadLeads ? (
         <div className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-5">
             <div className="rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-4">
               <div className="text-xs font-medium text-[hsl(var(--muted))]">
-                Всего заявок
+                Всего
               </div>
               <div className="mt-3 text-2xl font-semibold tracking-tight text-white">
                 {leads.length}
@@ -295,10 +339,19 @@ export function LeadsPageClient() {
 
             <div className="rounded-3xl border border-[rgb(74_222_128_/_0.22)] bg-[rgb(74_222_128_/_0.08)] p-4">
               <div className="text-xs font-medium text-[rgb(134_239_172)]">
-                Подтвержденные
+                Подтверждены
               </div>
               <div className="mt-3 text-2xl font-semibold tracking-tight text-white">
                 {confirmedCount}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-[rgb(248_113_113_/_0.18)] bg-[rgb(248_113_113_/_0.06)] p-4">
+              <div className="text-xs font-medium text-[rgb(252_165_165)]">
+                Закрыты
+              </div>
+              <div className="mt-3 text-2xl font-semibold tracking-tight text-white">
+                {rejectedCount + duplicateCount}
               </div>
             </div>
           </div>
@@ -349,6 +402,27 @@ export function LeadsPageClient() {
                           status === option.value ? "primary" : "secondary"
                         }
                         onClick={() => setStatus(option.value)}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 text-xs font-medium text-[hsl(var(--muted))]">
+                    Источник
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {leadSourceOptions.map((option) => (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        variant={
+                          source === option.value ? "primary" : "secondary"
+                        }
+                        onClick={() => setSource(option.value)}
                       >
                         {option.label}
                       </Button>

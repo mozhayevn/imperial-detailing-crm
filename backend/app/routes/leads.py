@@ -28,6 +28,7 @@ from app.schemas import (
     LeadConfirmRequest,
     LeadConfirmResponse,
     LeadCreate,
+    LeadMatchesResponse,
     LeadResponse,
     LeadStatusUpdate,
     LeadUpdate,
@@ -661,6 +662,75 @@ def confirm_lead(
     return LeadConfirmResponse(
         lead=get_lead_or_404(db, lead.id),
         order=order,
+    )
+
+
+@router.get("/{lead_id}/matches", response_model=LeadMatchesResponse)
+def get_lead_matches(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    existing_client = None
+
+    if lead.phone:
+        existing_client = (
+            db.query(Client)
+            .filter(Client.phone == lead.phone)
+            .first()
+        )
+
+    existing_car = None
+
+    if lead.plate_number:
+        existing_car = (
+            db.query(Car)
+            .filter(Car.plate_number == lead.plate_number)
+            .first()
+        )
+
+    active_duplicate_lead_ids = [
+        row[0]
+        for row in (
+            db.query(Lead.id)
+            .filter(
+                Lead.id != lead.id,
+                Lead.phone == lead.phone,
+                Lead.status.in_(["new", "in_review"]),
+            )
+            .order_by(Lead.created_at.desc())
+            .all()
+        )
+    ]
+
+    existing_car_label = None
+
+    if existing_car:
+        existing_car_label = " ".join(
+            part
+            for part in [
+                existing_car.brand,
+                existing_car.model,
+                str(existing_car.year) if existing_car.year else None,
+                existing_car.plate_number,
+            ]
+            if part
+        )
+
+    return LeadMatchesResponse(
+        existing_client_id=existing_client.id if existing_client else None,
+        existing_client_full_name=(
+            existing_client.full_name if existing_client else None
+        ),
+        existing_car_id=existing_car.id if existing_car else None,
+        existing_car_label=existing_car_label,
+        existing_car_client_id=existing_car.client_id if existing_car else None,
+        active_duplicate_lead_ids=active_duplicate_lead_ids,
     )
 
 

@@ -172,3 +172,14 @@ export type LeadConfirmResponse = {
     total_price: number;
   };
 };
+
+export type LeadMatches = {
+  existing_client_id: number | null;
+  existing_client_full_name: string | null;
+
+  existing_car_id: number | null;
+  existing_car_label: string | null;
+  existing_car_client_id: number | null;
+
+  active_duplicate_lead_ids: number[];
+};

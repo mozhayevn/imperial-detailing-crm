@@ -1558,3 +1558,14 @@ class IntegrationLeadCreate(BaseModel):
     external_username: str | None = None
 
     items: list[IntegrationLeadItemCreate]
+
+
+class LeadMatchesResponse(BaseModel):
+    existing_client_id: int | None = None
+    existing_client_full_name: str | None = None
+
+    existing_car_id: int | None = None
+    existing_car_label: str | None = None
+    existing_car_client_id: int | None = None
+
+    active_duplicate_lead_ids: list[int] = []
