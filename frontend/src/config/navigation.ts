@@ -89,12 +89,7 @@ export const futureNavigation: NavigationItem[] = [
     title: "Заявки",
     href: routes.leads,
     icon: "Inbox",
-    description: "Будущие заявки из мессенджеров",
-    badge: {
-      label: "Скоро",
-      tone: "primary",
-    },
-    isFuture: true,
+    description: "Входящие заявки",
   },
   {
     title: "AI-ассистент",

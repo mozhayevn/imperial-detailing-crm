@@ -1324,3 +1324,167 @@ class SecurityAuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LeadItemCreate(BaseModel):
+    service_id: int | None = None
+    service_name_text: str | None = None
+    material_brand_id: int | None = None
+    service_package_id: int | None = None
+    quantity: int = 1
+    comment: str | None = None
+
+
+class LeadItemResponse(BaseModel):
+    id: int
+    lead_id: int
+
+    service_id: int | None = None
+    service_name_text: str | None = None
+    service_name: str | None = None
+
+    material_brand_id: int | None = None
+    material_brand_name: str | None = None
+
+    service_package_id: int | None = None
+    service_package_name: str | None = None
+
+    quantity: int
+    comment: str | None = None
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LeadContactResponse(BaseModel):
+    id: int
+
+    full_name: str | None = None
+    phone: str
+
+    source: str
+    external_user_id: str | None = None
+    external_username: str | None = None
+
+    created_client_id: int | None = None
+
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class LeadCreate(BaseModel):
+    source: str = "manual"
+
+    client_name: str | None = None
+    phone: str
+
+    message: str | None = None
+
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    car_color: str | None = None
+    plate_number: str | None = None
+
+    preferred_date: datetime | None = None
+    preferred_time: str | None = None
+
+    comment: str | None = None
+
+    external_user_id: str | None = None
+    external_username: str | None = None
+
+    items: list[LeadItemCreate] = []
+
+
+class LeadUpdate(BaseModel):
+    client_name: str | None = None
+    phone: str | None = None
+
+    message: str | None = None
+
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    car_color: str | None = None
+    plate_number: str | None = None
+
+    preferred_date: datetime | None = None
+    preferred_time: str | None = None
+
+    comment: str | None = None
+
+    assigned_user_id: int | None = None
+
+    items: list[LeadItemCreate] | None = None
+
+
+class LeadStatusUpdate(BaseModel):
+    status: str
+    comment: str | None = None
+
+
+class LeadResponse(BaseModel):
+    id: int
+
+    lead_contact_id: int
+    lead_contact: LeadContactResponse | None = None
+
+    source: str
+    status: str
+
+    client_name: str | None = None
+    phone: str
+
+    message: str | None = None
+
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    car_color: str | None = None
+    plate_number: str | None = None
+
+    preferred_date: datetime | None = None
+    preferred_time: str | None = None
+
+    comment: str | None = None
+
+    assigned_user_id: int | None = None
+    assigned_user_full_name: str | None = None
+
+    reviewed_by_user_id: int | None = None
+    reviewed_by_user_full_name: str | None = None
+    reviewed_at: datetime | None = None
+
+    created_client_id: int | None = None
+    created_car_id: int | None = None
+    created_order_id: int | None = None
+
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    items: list[LeadItemResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class LeadAuditLogResponse(BaseModel):
+    id: int
+
+    lead_id: int
+    actor_user_id: int | None = None
+    actor_user_full_name: str | None = None
+
+    action: str
+    details: str | None = None
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

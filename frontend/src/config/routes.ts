@@ -51,6 +51,11 @@ export const routes = {
   adminPermissions: "/admin/permissions",
 
   leads: "/leads",
+  newLead: "/leads/new",
+  leadDetails: (leadId: string | number) => `/leads/${leadId}`,
+  leadContacts: "/leads/contacts",
+  leadContactDetails: (leadContactId: string | number) =>
+    `/leads/contacts/${leadContactId}`,
   inboundRequests: "/leads/inbound",
   leadSources: "/leads/sources",
 

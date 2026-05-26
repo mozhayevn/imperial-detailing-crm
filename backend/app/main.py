@@ -26,7 +26,7 @@ from app.routes.payments import router as payments_router
 from app.routes.order_checklist import router as order_checklist_router
 from fastapi.staticfiles import StaticFiles
 from app.routes.order_photos import router as orders_photos_router
-from app.routes import material_stock, audit, dashboard, profile, finance, expenses, security_audit
+from app.routes import material_stock, audit, dashboard, profile, finance, expenses, security_audit, leads
 from pathlib import Path
 
 Base.metadata.create_all(bind=engine)
@@ -77,6 +77,7 @@ app.include_router(profile.router)
 app.include_router(finance.router)
 app.include_router(expenses.router)
 app.include_router(security_audit.router)
+app.include_router(leads.router)
 
 
 @app.get("/")

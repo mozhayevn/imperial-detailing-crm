@@ -673,3 +673,140 @@ class SecurityAuditLog(Base):
     @property
     def target_user_full_name(self) -> str | None:
         return self.target_user.full_name if self.target_user else None
+
+
+class LeadContact(Base):
+    __tablename__ = "lead_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    full_name = Column(String, nullable=True)
+    phone = Column(String, nullable=False, index=True)
+
+    source = Column(String, nullable=False, default="manual")
+    external_user_id = Column(String, nullable=True, index=True)
+    external_username = Column(String, nullable=True)
+
+    created_client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True)
+
+    created_client = relationship("Client")
+    leads = relationship("Lead", back_populates="lead_contact")
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    lead_contact_id = Column(Integer, ForeignKey("lead_contacts.id"), nullable=False)
+
+    source = Column(String, nullable=False, default="manual")
+    status = Column(String, nullable=False, default="new")
+
+    client_name = Column(String, nullable=True)
+    phone = Column(String, nullable=False)
+
+    message = Column(Text, nullable=True)
+
+    car_brand = Column(String, nullable=True)
+    car_model = Column(String, nullable=True)
+    car_year = Column(Integer, nullable=True)
+    car_color = Column(String, nullable=True)
+    plate_number = Column(String, nullable=True)
+
+    preferred_date = Column(DateTime, nullable=True)
+    preferred_time = Column(String, nullable=True)
+
+    comment = Column(Text, nullable=True)
+
+    assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+
+    created_client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    created_car_id = Column(Integer, ForeignKey("cars.id"), nullable=True)
+    created_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True)
+
+    lead_contact = relationship("LeadContact", back_populates="leads")
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id])
+    reviewed_by_user = relationship("User", foreign_keys=[reviewed_by_user_id])
+
+    created_client = relationship("Client")
+    created_car = relationship("Car")
+    created_order = relationship("Order")
+
+    items = relationship("LeadItem", back_populates="lead", cascade="all, delete-orphan")
+
+    @property
+    def assigned_user_full_name(self) -> str | None:
+        return self.assigned_user.full_name if self.assigned_user else None
+
+    @property
+    def reviewed_by_user_full_name(self) -> str | None:
+        return self.reviewed_by_user.full_name if self.reviewed_by_user else None
+
+
+class LeadItem(Base):
+    __tablename__ = "lead_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
+    service_name_text = Column(String, nullable=True)
+
+    material_brand_id = Column(Integer, ForeignKey("material_brands.id"), nullable=True)
+    service_package_id = Column(Integer, ForeignKey("service_packages.id"), nullable=True)
+
+    quantity = Column(Integer, nullable=False, default=1)
+    comment = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead", back_populates="items")
+    service = relationship("Service")
+    material_brand = relationship("MaterialBrand")
+    service_package = relationship("ServicePackage")
+
+    @property
+    def service_name(self) -> str | None:
+        if self.service:
+            return self.service.name
+
+        return self.service_name_text
+
+    @property
+    def material_brand_name(self) -> str | None:
+        return self.material_brand.name if self.material_brand else None
+
+    @property
+    def service_package_name(self) -> str | None:
+        return self.service_package.name if self.service_package else None
+
+
+class LeadAuditLog(Base):
+    __tablename__ = "lead_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    action = Column(String, nullable=False)
+    details = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead")
+    actor_user = relationship("User")
+
+    @property
+    def actor_user_full_name(self) -> str | None:
+        return self.actor_user.full_name if self.actor_user else None

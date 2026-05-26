@@ -1,0 +1,488 @@
+import json
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload
+
+from app.database import get_db
+from app.deps import require_permission
+from app.models import (
+    Lead,
+    LeadAuditLog,
+    LeadContact,
+    LeadItem,
+    MaterialBrand,
+    Service,
+    ServicePackage,
+    User,
+)
+from app.schemas import (
+    LeadCreate,
+    LeadResponse,
+    LeadStatusUpdate,
+    LeadUpdate,
+    LeadAuditLogResponse,
+    LeadContactResponse,
+)
+
+router = APIRouter(prefix="/leads", tags=["Leads"])
+
+LEAD_STATUSES = {
+    "new",
+    "in_review",
+    "confirmed",
+    "rejected",
+    "duplicate",
+}
+
+
+def normalize_phone(phone: str) -> str:
+    return phone.strip()
+
+
+def write_lead_audit_log(
+    db: Session,
+    lead_id: int,
+    action: str,
+    actor_user_id: int | None = None,
+    details: dict | None = None,
+) -> LeadAuditLog:
+    audit_log = LeadAuditLog(
+        lead_id=lead_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        details=json.dumps(details or {}, ensure_ascii=False),
+    )
+
+    db.add(audit_log)
+    return audit_log
+
+
+def get_or_create_lead_contact(
+    db: Session,
+    phone: str,
+    full_name: str | None,
+    source: str,
+    external_user_id: str | None = None,
+    external_username: str | None = None,
+) -> LeadContact:
+    normalized_phone = normalize_phone(phone)
+
+    query = db.query(LeadContact)
+
+    if external_user_id:
+        existing_contact = (
+            query.filter(
+                LeadContact.source == source,
+                LeadContact.external_user_id == external_user_id,
+            )
+            .first()
+        )
+
+        if existing_contact:
+            if full_name and not existing_contact.full_name:
+                existing_contact.full_name = full_name
+
+            if external_username:
+                existing_contact.external_username = external_username
+
+            existing_contact.updated_at = datetime.utcnow()
+            return existing_contact
+
+    existing_contact = (
+        db.query(LeadContact)
+        .filter(LeadContact.phone == normalized_phone)
+        .first()
+    )
+
+    if existing_contact:
+        if full_name and not existing_contact.full_name:
+            existing_contact.full_name = full_name
+
+        if external_user_id and not existing_contact.external_user_id:
+            existing_contact.external_user_id = external_user_id
+
+        if external_username:
+            existing_contact.external_username = external_username
+
+        existing_contact.updated_at = datetime.utcnow()
+        return existing_contact
+
+    lead_contact = LeadContact(
+        full_name=full_name,
+        phone=normalized_phone,
+        source=source,
+        external_user_id=external_user_id,
+        external_username=external_username,
+    )
+
+    db.add(lead_contact)
+    db.flush()
+
+    return lead_contact
+
+
+def validate_lead_item_references(
+    db: Session,
+    service_id: int | None = None,
+    material_brand_id: int | None = None,
+    service_package_id: int | None = None,
+) -> None:
+    if service_id is not None:
+        service = db.query(Service).filter(Service.id == service_id).first()
+        if not service:
+            raise HTTPException(status_code=404, detail="Service not found")
+
+        if not service.is_active:
+            raise HTTPException(status_code=400, detail="Service is archived")
+
+    if material_brand_id is not None:
+        material_brand = (
+            db.query(MaterialBrand)
+            .filter(MaterialBrand.id == material_brand_id)
+            .first()
+        )
+        if not material_brand:
+            raise HTTPException(status_code=404, detail="Material brand not found")
+
+    if service_package_id is not None:
+        service_package = (
+            db.query(ServicePackage)
+            .filter(ServicePackage.id == service_package_id)
+            .first()
+        )
+        if not service_package:
+            raise HTTPException(status_code=404, detail="Service package not found")
+
+        if not service_package.is_active:
+            raise HTTPException(status_code=400, detail="Service package is archived")
+
+
+def replace_lead_items(
+    db: Session,
+    lead: Lead,
+    items_data: list,
+) -> None:
+    db.query(LeadItem).filter(LeadItem.lead_id == lead.id).delete()
+
+    for item_data in items_data:
+        validate_lead_item_references(
+            db=db,
+            service_id=item_data.service_id,
+            material_brand_id=item_data.material_brand_id,
+            service_package_id=item_data.service_package_id,
+        )
+
+        if item_data.service_id is None and not item_data.service_name_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Lead item must have service_id or service_name_text",
+            )
+
+        quantity = item_data.quantity or 1
+
+        if quantity <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Lead item quantity must be greater than 0",
+            )
+
+        lead_item = LeadItem(
+            lead_id=lead.id,
+            service_id=item_data.service_id,
+            service_name_text=item_data.service_name_text,
+            material_brand_id=item_data.material_brand_id,
+            service_package_id=item_data.service_package_id,
+            quantity=quantity,
+            comment=item_data.comment,
+        )
+
+        db.add(lead_item)
+
+
+def get_lead_or_404(db: Session, lead_id: int) -> Lead:
+    lead = (
+        db.query(Lead)
+        .options(
+            joinedload(Lead.lead_contact),
+            joinedload(Lead.assigned_user),
+            joinedload(Lead.reviewed_by_user),
+            joinedload(Lead.items).joinedload(LeadItem.service),
+            joinedload(Lead.items).joinedload(LeadItem.material_brand),
+            joinedload(Lead.items).joinedload(LeadItem.service_package),
+        )
+        .filter(Lead.id == lead_id)
+        .first()
+    )
+
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    return lead
+
+
+@router.get("", response_model=list[LeadResponse])
+def get_leads(
+    status: str | None = Query(None),
+    source: str | None = Query(None),
+    phone: str | None = Query(None),
+    assigned_user_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    query = (
+        db.query(Lead)
+        .options(
+            joinedload(Lead.lead_contact),
+            joinedload(Lead.assigned_user),
+            joinedload(Lead.reviewed_by_user),
+            joinedload(Lead.items).joinedload(LeadItem.service),
+            joinedload(Lead.items).joinedload(LeadItem.material_brand),
+            joinedload(Lead.items).joinedload(LeadItem.service_package),
+        )
+    )
+
+    if status:
+        query = query.filter(Lead.status == status)
+
+    if source:
+        query = query.filter(Lead.source == source)
+
+    if phone:
+        query = query.filter(Lead.phone.ilike(f"%{phone}%"))
+
+    if assigned_user_id:
+        query = query.filter(Lead.assigned_user_id == assigned_user_id)
+
+    return query.order_by(Lead.created_at.desc()).all()
+
+
+@router.post("", response_model=LeadResponse)
+def create_lead(
+    data: LeadCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.manage")),
+):
+    normalized_phone = normalize_phone(data.phone)
+
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail="Phone is required")
+
+    lead_contact = get_or_create_lead_contact(
+        db=db,
+        phone=normalized_phone,
+        full_name=data.client_name,
+        source=data.source,
+        external_user_id=data.external_user_id,
+        external_username=data.external_username,
+    )
+
+    lead = Lead(
+        lead_contact_id=lead_contact.id,
+        source=data.source,
+        status="new",
+        client_name=data.client_name,
+        phone=normalized_phone,
+        message=data.message,
+        car_brand=data.car_brand,
+        car_model=data.car_model,
+        car_year=data.car_year,
+        car_color=data.car_color,
+        plate_number=data.plate_number,
+        preferred_date=data.preferred_date,
+        preferred_time=data.preferred_time,
+        comment=data.comment,
+    )
+
+    db.add(lead)
+    db.flush()
+
+    replace_lead_items(db=db, lead=lead, items_data=data.items)
+
+    write_lead_audit_log(
+        db=db,
+        lead_id=lead.id,
+        actor_user_id=current_user.id,
+        action="lead_created",
+        details={
+            "message": "Заявка создана вручную в CRM",
+            "source": data.source,
+            "phone": normalized_phone,
+        },
+    )
+
+    db.commit()
+
+    return get_lead_or_404(db, lead.id)
+
+
+@router.get("/contacts", response_model=list[LeadContactResponse])
+def get_lead_contacts(
+    phone: str | None = Query(None),
+    source: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    query = db.query(LeadContact)
+
+    if phone:
+        query = query.filter(LeadContact.phone.ilike(f"%{phone}%"))
+
+    if source:
+        query = query.filter(LeadContact.source == source)
+
+    return query.order_by(LeadContact.created_at.desc()).all()
+
+
+@router.get("/contacts/{lead_contact_id}/leads", response_model=list[LeadResponse])
+def get_lead_contact_leads(
+    lead_contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    lead_contact = (
+        db.query(LeadContact)
+        .filter(LeadContact.id == lead_contact_id)
+        .first()
+    )
+
+    if not lead_contact:
+        raise HTTPException(status_code=404, detail="Lead contact not found")
+
+    return (
+        db.query(Lead)
+        .options(
+            joinedload(Lead.lead_contact),
+            joinedload(Lead.assigned_user),
+            joinedload(Lead.reviewed_by_user),
+            joinedload(Lead.items).joinedload(LeadItem.service),
+            joinedload(Lead.items).joinedload(LeadItem.material_brand),
+            joinedload(Lead.items).joinedload(LeadItem.service_package),
+        )
+        .filter(Lead.lead_contact_id == lead_contact_id)
+        .order_by(Lead.created_at.desc())
+        .all()
+    )
+
+
+@router.get("/{lead_id}", response_model=LeadResponse)
+def get_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    return get_lead_or_404(db, lead_id)
+
+
+@router.put("/{lead_id}", response_model=LeadResponse)
+def update_lead(
+    lead_id: int,
+    data: LeadUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.manage")),
+):
+    lead = get_lead_or_404(db, lead_id)
+
+    if lead.status == "confirmed":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmed lead cannot be edited",
+        )
+
+    update_data = data.model_dump(exclude_unset=True, exclude={"items"})
+
+    if "phone" in update_data and update_data["phone"]:
+        update_data["phone"] = normalize_phone(update_data["phone"])
+
+    for key, value in update_data.items():
+        setattr(lead, key, value)
+
+    if data.assigned_user_id is not None:
+        assigned_user = (
+            db.query(User)
+            .filter(User.id == data.assigned_user_id)
+            .first()
+        )
+
+        if not assigned_user:
+            raise HTTPException(status_code=404, detail="Assigned user not found")
+
+    if data.items is not None:
+        replace_lead_items(db=db, lead=lead, items_data=data.items)
+
+    lead.updated_at = datetime.utcnow()
+
+    write_lead_audit_log(
+        db=db,
+        lead_id=lead.id,
+        actor_user_id=current_user.id,
+        action="lead_updated",
+        details={
+            "message": "Заявка обновлена",
+        },
+    )
+
+    db.commit()
+
+    return get_lead_or_404(db, lead.id)
+
+
+@router.patch("/{lead_id}/status", response_model=LeadResponse)
+def update_lead_status(
+    lead_id: int,
+    data: LeadStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.manage")),
+):
+    lead = get_lead_or_404(db, lead_id)
+
+    if data.status not in LEAD_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid lead status")
+
+    if lead.status == "confirmed":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmed lead status cannot be changed",
+        )
+
+    old_status = lead.status
+    lead.status = data.status
+    lead.reviewed_by_user_id = current_user.id
+    lead.reviewed_at = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+
+    write_lead_audit_log(
+        db=db,
+        lead_id=lead.id,
+        actor_user_id=current_user.id,
+        action="lead_status_changed",
+        details={
+            "old_status": old_status,
+            "new_status": data.status,
+            "comment": data.comment,
+        },
+    )
+
+    db.commit()
+
+    return get_lead_or_404(db, lead.id)
+
+
+@router.get("/{lead_id}/audit-logs", response_model=list[LeadAuditLogResponse])
+def get_lead_audit_logs(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    return (
+        db.query(LeadAuditLog)
+        .options(joinedload(LeadAuditLog.actor_user))
+        .filter(LeadAuditLog.lead_id == lead_id)
+        .order_by(LeadAuditLog.created_at.desc())
+        .all()
+    )
