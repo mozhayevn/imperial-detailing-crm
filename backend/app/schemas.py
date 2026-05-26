@@ -1569,3 +1569,34 @@ class LeadMatchesResponse(BaseModel):
     existing_car_client_id: int | None = None
 
     active_duplicate_lead_ids: list[int] = []
+
+
+class IntegrationMyLeadItemResponse(BaseModel):
+    id: int
+    service_name: str | None = None
+    quantity: int
+
+
+class IntegrationMyLeadResponse(BaseModel):
+    id: int
+    status: str
+    source: str
+
+    client_name: str | None = None
+    phone: str
+
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+
+    preferred_time: str | None = None
+
+    created_order_id: int | None = None
+    created_at: datetime
+
+    items: list[IntegrationMyLeadItemResponse] = []
+
+
+class IntegrationMyLeadsResponse(BaseModel):
+    lead_contact_id: int | None = None
+    leads: list[IntegrationMyLeadResponse] = []

@@ -1,13 +1,19 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.database import get_db
 from app.models import Lead, LeadAuditLog, LeadContact, LeadItem
-from app.schemas import IntegrationLeadCreate, LeadResponse
+from app.schemas import (
+    IntegrationLeadCreate,
+    IntegrationMyLeadItemResponse,
+    IntegrationMyLeadResponse,
+    IntegrationMyLeadsResponse,
+    LeadResponse,
+)
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
 
@@ -135,6 +141,95 @@ def get_lead_with_relations(db: Session, lead_id: int) -> Lead:
         )
         .filter(Lead.id == lead_id)
         .first()
+    )
+
+
+def get_integration_lead_item_service_name(item: LeadItem) -> str | None:
+    if item.service:
+        return item.service.name
+
+    return item.service_name_text
+
+
+@router.get("/leads/my", response_model=IntegrationMyLeadsResponse)
+def get_my_integration_leads(
+    source: str = Query(...),
+    external_user_id: str = Query(...),
+    limit: int = Query(10, ge=1, le=20),
+    db: Session = Depends(get_db),
+    x_integration_token: str | None = Header(None),
+):
+    validate_integration_token(x_integration_token)
+
+    normalized_source = source.strip().lower()
+    normalized_external_user_id = external_user_id.strip()
+
+    if normalized_source not in ALLOWED_INTEGRATION_SOURCES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid integration source",
+        )
+
+    if not normalized_external_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="External user id is required",
+        )
+
+    lead_contact = (
+        db.query(LeadContact)
+        .filter(
+            LeadContact.source == normalized_source,
+            LeadContact.external_user_id == normalized_external_user_id,
+        )
+        .first()
+    )
+
+    if not lead_contact:
+        return IntegrationMyLeadsResponse(
+            lead_contact_id=None,
+            leads=[],
+        )
+
+    leads = (
+        db.query(Lead)
+        .options(
+            joinedload(Lead.items).joinedload(LeadItem.service),
+            joinedload(Lead.items).joinedload(LeadItem.material_brand),
+            joinedload(Lead.items).joinedload(LeadItem.service_package),
+        )
+        .filter(Lead.lead_contact_id == lead_contact.id)
+        .order_by(Lead.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return IntegrationMyLeadsResponse(
+        lead_contact_id=lead_contact.id,
+        leads=[
+            IntegrationMyLeadResponse(
+                id=lead.id,
+                status=lead.status,
+                source=lead.source,
+                client_name=lead.client_name,
+                phone=lead.phone,
+                car_brand=lead.car_brand,
+                car_model=lead.car_model,
+                car_year=lead.car_year,
+                preferred_time=lead.preferred_time,
+                created_order_id=lead.created_order_id,
+                created_at=lead.created_at,
+                items=[
+                    IntegrationMyLeadItemResponse(
+                        id=item.id,
+                        service_name=get_integration_lead_item_service_name(item),
+                        quantity=item.quantity,
+                    )
+                    for item in lead.items
+                ],
+            )
+            for lead in leads
+        ],
     )
 
 

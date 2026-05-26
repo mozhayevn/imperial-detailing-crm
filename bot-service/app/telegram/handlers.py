@@ -7,7 +7,7 @@ from aiogram.types import Message, ReplyKeyboardRemove
 
 from app.common.schemas import LeadItemPayload, LeadPayload
 from app.config import settings
-from app.crm_client import CrmClientError, create_lead
+from app.crm_client import CrmClientError, create_lead, get_my_leads
 from app.telegram.keyboards import (
     confirm_keyboard,
     phone_keyboard,
@@ -74,6 +74,14 @@ FALLBACK_TEXT = (
     "/help — помощь"
 )
 
+LEAD_STATUS_LABELS = {
+    "new": "новая",
+    "in_review": "в обработке",
+    "confirmed": "подтверждена",
+    "rejected": "отклонена",
+    "duplicate": "дубль",
+}
+
 
 def normalize_optional_text(value: str | None) -> str | None:
     if not value:
@@ -104,6 +112,47 @@ def get_username(message: Message) -> str | None:
         return None
 
     return f"@{message.from_user.username}"
+
+
+def is_private_chat(message: Message) -> bool:
+    return message.chat.type == "private"
+
+
+def is_group_chat(message: Message) -> bool:
+    return message.chat.type in {"group", "supergroup"}
+
+
+def is_manager_group(message: Message) -> bool:
+    return (
+        is_group_chat(message)
+        and settings.MANAGER_CHAT_ID is not None
+        and message.chat.id == settings.MANAGER_CHAT_ID
+    )
+
+
+async def leave_unknown_group_if_needed(message: Message) -> bool:
+    if not is_group_chat(message):
+        return False
+
+    if is_manager_group(message):
+        return False
+
+    if not settings.LEAVE_UNKNOWN_GROUPS:
+        return True
+
+    try:
+        await message.answer(
+            "Этот бот работает только в официальной группе менеджеров Imperial Detailing."
+        )
+        await message.bot.leave_chat(message.chat.id)
+    except Exception:
+        logger.exception(
+            "Failed to leave unknown group. chat_id=%s chat_type=%s",
+            message.chat.id,
+            message.chat.type,
+        )
+
+    return True
 
 
 def normalize_phone(value: str | None) -> str | None:
@@ -183,6 +232,70 @@ def build_lead_summary(data: dict) -> str:
     )
 
 
+def get_telegram_external_user_id(message: Message) -> str | None:
+    if not message.from_user:
+        return None
+
+    return str(message.from_user.id)
+
+
+def get_lead_status_label(status: str) -> str:
+    return LEAD_STATUS_LABELS.get(status, status)
+
+
+def build_my_leads_text(leads_response) -> str:
+    if not leads_response.leads:
+        return (
+            "У вас пока нет заявок.\n\n"
+            "Чтобы оставить заявку, нажмите “Оставить заявку” или отправьте /new."
+        )
+
+    lines = ["Ваши последние заявки:\n"]
+
+    for lead in leads_response.leads:
+        car_parts = [
+            lead.car_brand,
+            lead.car_model,
+            str(lead.car_year) if lead.car_year else None,
+        ]
+        car_label = " ".join(
+            part.strip()
+            for part in car_parts
+            if part and part.strip()
+        )
+
+        if not car_label:
+            car_label = "автомобиль не указан"
+
+        service_names = [
+            item.service_name
+            for item in lead.items
+            if item.service_name
+        ]
+
+        services_label = ", ".join(service_names) if service_names else "услуги не указаны"
+
+        lines.append(
+            f"#{lead.id} — {get_lead_status_label(lead.status)}\n"
+            f"{car_label}\n"
+            f"Услуги: {services_label}"
+        )
+
+        if lead.preferred_time:
+            lines.append(f"Удобное время: {lead.preferred_time}")
+
+        if lead.created_order_id:
+            lines.append(f"Заказ CRM: #{lead.created_order_id}")
+
+        lines.append("")
+
+    lines.append(
+        "Если нужно оставить новую заявку, нажмите “Оставить заявку” или отправьте /new."
+    )
+
+    return "\n".join(lines)
+
+
 async def start_lead_form(message: Message, state: FSMContext) -> None:
     await state.clear()
 
@@ -198,6 +311,16 @@ async def start_lead_form(message: Message, state: FSMContext) -> None:
 async def start_handler(message: Message, state: FSMContext) -> None:
     await state.clear()
 
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer(
+            "Этот чат используется для уведомлений менеджеров.\n\n"
+            "Чтобы оставить заявку, напишите боту в личные сообщения."
+        )
+        return
+
     await message.answer(
         START_TEXT,
         reply_markup=start_keyboard(),
@@ -206,6 +329,13 @@ async def start_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("new"))
 async def new_lead_handler(message: Message, state: FSMContext) -> None:
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer("Заявки создаются только в личном чате с ботом.")
+        return
+
     await start_lead_form(message, state)
 
 
@@ -217,10 +347,61 @@ async def help_handler(message: Message) -> None:
     )
 
 
+@router.message(Command("chatid"))
+async def chat_id_handler(message: Message) -> None:
+    if is_private_chat(message):
+        await message.answer(
+            "Эта команда нужна для группы менеджеров.\n\n"
+            "Добавьте бота в группу и отправьте там /chatid."
+        )
+        return
+
+    if await leave_unknown_group_if_needed(message):
+        return
+
+    await message.answer(f"Chat ID: {message.chat.id}")
+
+
 @router.message(Command("requests"))
 async def requests_handler(message: Message) -> None:
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer(
+            "Раздел “Мои заявки” доступен только в личном чате с ботом."
+        )
+        return
+
+    external_user_id = get_telegram_external_user_id(message)
+
+    if not external_user_id:
+        await message.answer(
+            "Не удалось определить ваш Telegram ID. Попробуйте позже.",
+            reply_markup=start_keyboard(),
+        )
+        return
+
+    try:
+        leads_response = await get_my_leads(
+            source=settings.BOT_SOURCE,
+            external_user_id=external_user_id,
+            limit=10,
+        )
+    except CrmClientError:
+        logger.exception(
+            "Failed to load my leads from CRM. telegram_user_id=%s username=%s",
+            external_user_id,
+            get_username(message),
+        )
+        await message.answer(
+            "Не удалось загрузить ваши заявки. Попробуйте позже.",
+            reply_markup=start_keyboard(),
+        )
+        return
+
     await message.answer(
-        REQUESTS_STUB_TEXT,
+        build_my_leads_text(leads_response),
         reply_markup=start_keyboard(),
     )
 
@@ -243,10 +424,16 @@ async def help_button_handler(message: Message) -> None:
 
 @router.message(lambda message: message.text == "Мои заявки")
 async def requests_button_handler(message: Message) -> None:
-    await message.answer(
-        REQUESTS_STUB_TEXT,
-        reply_markup=start_keyboard(),
-    )
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer(
+            "Раздел “Мои заявки” доступен только в личном чате с ботом."
+        )
+        return
+
+    await requests_handler(message)
 
 
 @router.message(lambda message: message.text == "О компании")
@@ -259,6 +446,13 @@ async def about_button_handler(message: Message) -> None:
 
 @router.message(lambda message: message.text == "Оставить заявку")
 async def start_lead_button_handler(message: Message, state: FSMContext) -> None:
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer("Заявки создаются только в личном чате с ботом.")
+        return
+
     await start_lead_form(message, state)
 
 
@@ -561,6 +755,10 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
 
 @router.message()
 async def fallback_handler(message: Message) -> None:
+    if is_group_chat(message):
+        await leave_unknown_group_if_needed(message)
+        return
+
     await message.answer(
         FALLBACK_TEXT,
         reply_markup=start_keyboard(),

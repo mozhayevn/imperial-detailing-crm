@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     BOT_SOURCE: str = "telegram"
 
+    MANAGER_CHAT_ID: int | None = None
+    LEAVE_UNKNOWN_GROUPS: bool = True
+
     class Config:
         env_file = ".env"
 
