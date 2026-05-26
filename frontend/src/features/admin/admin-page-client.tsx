@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/src/components/ui/badge";
@@ -18,6 +19,7 @@ import { PageHeader } from "@/src/components/layout/page-header";
 
 import { getApiErrorMessage } from "@/src/lib/api/errors";
 import { formatDateTime } from "@/src/lib/formatters";
+import { routes } from "@/src/config/routes";
 import { canAccessByPermission } from "@/src/features/auth/permission-guards";
 import { useAuth } from "@/src/features/auth/use-auth";
 
@@ -601,9 +603,19 @@ export function AdminPageClient() {
                                 </div>
                               </div>
 
-                              <div className="text-xs leading-5 text-[hsl(var(--muted))] lg:text-right">
-                                <div>User ID #{user.id}</div>
-                                <div>{formatDateTime(user.created_at)}</div>
+                              <div className="flex flex-col gap-2 text-xs leading-5 text-[hsl(var(--muted))] lg:items-end lg:text-right">
+                                <div>
+                                  <div>User ID #{user.id}</div>
+                                  <div>{formatDateTime(user.created_at)}</div>
+                                </div>
+
+                                <Link
+                                  href={routes.userProfile(user.id)}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="inline-flex items-center justify-center rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] px-3 py-2 text-xs font-semibold text-white transition hover:border-[rgb(45_212_191_/_0.35)] hover:bg-[rgb(45_212_191_/_0.08)]"
+                                >
+                                  Профиль
+                                </Link>
                               </div>
                             </div>
                           </button>
@@ -625,9 +637,17 @@ export function AdminPageClient() {
                         </CardDescription>
                       </div>
 
-                      <Badge tone={getUserStatusTone(selectedUser)}>
-                        {getUserStatusLabel(selectedUser)}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={getUserStatusTone(selectedUser)}>
+                          {getUserStatusLabel(selectedUser)}
+                        </Badge>
+
+                        <Link href={routes.userProfile(selectedUser.id)}>
+                          <Button type="button" variant="secondary" size="sm">
+                            Открыть профиль
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </CardHeader>
 

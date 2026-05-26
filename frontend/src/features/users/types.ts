@@ -42,3 +42,18 @@ export type UserPublicProfile = {
 
   created_at: string;
 };
+
+export type UserPublicListItem = {
+  id: number;
+  full_name: string;
+  avatar_url: string | null;
+
+  is_active: boolean;
+  is_super_admin: boolean;
+  roles: string[];
+
+  email: string | null;
+  phone: string | null;
+
+  can_view_full_profile: boolean;
+};

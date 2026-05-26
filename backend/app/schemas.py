@@ -545,6 +545,24 @@ class UserPublicProfileResponse(BaseModel):
         from_attributes = True
 
 
+class UserPublicListItemResponse(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: str | None = None
+
+    is_active: bool
+    is_super_admin: bool
+    roles: list[str]
+
+    email: str | None = None
+    phone: str | None = None
+
+    can_view_full_profile: bool
+
+    class Config:
+        from_attributes = True
+
+
 class UserRoleAssign(BaseModel):
     user_id: int
     role_id: int

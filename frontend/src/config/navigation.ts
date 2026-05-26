@@ -33,6 +33,12 @@ export const mainNavigation: NavigationItem[] = [
     description: "Профили, авто и история",
   },
   {
+    title: "Сотрудники",
+    href: routes.users,
+    icon: "UserRound",
+    description: "Команда и публичные профили",
+  },
+  {
     title: "Автомобили",
     href: routes.cars,
     icon: "Car",

@@ -42,11 +42,13 @@ export const routes = {
   userRoleAudits: "/audits/users",
   securityAudit: "/audits/security",
 
+  users: "/users",
+  userProfile: (userId: string | number) => `/users/${userId}`,
+
   admin: "/admin",
   adminUsers: "/admin/users",
   adminRoles: "/admin/roles",
   adminPermissions: "/admin/permissions",
-  userProfile: (userId: string | number) => `/users/${userId}`,
 
   leads: "/leads",
   inboundRequests: "/leads/inbound",
