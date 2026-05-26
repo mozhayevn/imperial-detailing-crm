@@ -4,6 +4,7 @@
 .env.*.local
 backend/.env
 frontend/.env.local
+bot-service/.env
 
 # Python
 .venv/
