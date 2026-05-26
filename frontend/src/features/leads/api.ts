@@ -2,6 +2,9 @@ import { apiRequest } from "@/src/lib/api/client";
 import type {
   Lead,
   LeadAuditLog,
+  LeadConfirmPayload,
+  LeadConfirmResponse,
+  LeadContact,
   LeadCreatePayload,
   LeadStatus,
 } from "@/src/features/leads/types";
@@ -69,6 +72,38 @@ export async function getLeadAuditLogs(
   leadId: string | number,
 ): Promise<LeadAuditLog[]> {
   return apiRequest<LeadAuditLog[]>(`/leads/${leadId}/audit-logs`, {
+    method: "GET",
+  });
+}
+
+export async function confirmLead(
+  leadId: string | number,
+  payload: LeadConfirmPayload,
+): Promise<LeadConfirmResponse> {
+  return apiRequest<LeadConfirmResponse>(`/leads/${leadId}/confirm`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function getLeadContacts(): Promise<LeadContact[]> {
+  return apiRequest<LeadContact[]>("/leads/contacts", {
+    method: "GET",
+  });
+}
+
+export async function getLeadContact(
+  leadContactId: string | number,
+): Promise<LeadContact> {
+  return apiRequest<LeadContact>(`/leads/contacts/${leadContactId}`, {
+    method: "GET",
+  });
+}
+
+export async function getLeadContactLeads(
+  leadContactId: string | number,
+): Promise<Lead[]> {
+  return apiRequest<Lead[]>(`/leads/contacts/${leadContactId}/leads`, {
     method: "GET",
   });
 }

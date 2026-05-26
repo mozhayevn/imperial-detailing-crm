@@ -127,3 +127,48 @@ export type LeadAuditLog = {
 
   created_at: string;
 };
+
+export type LeadConfirmItemPayload = {
+  lead_item_id?: number | null;
+  service_id: number;
+  material_brand_id?: number | null;
+  service_package_id?: number | null;
+  quantity: number;
+  discount_percent?: number;
+  discount_reason?: string | null;
+};
+
+export type LeadConfirmPayload = {
+  client_id?: number | null;
+  car_id?: number | null;
+
+  client_name?: string | null;
+  phone?: string | null;
+
+  car_type_id?: number | null;
+  car_brand?: string | null;
+  car_model?: string | null;
+  car_year?: number | null;
+  car_color?: string | null;
+  plate_number?: string | null;
+
+  assigned_user_id?: number | null;
+  work_bay_id?: number | null;
+  scheduled_at?: string | null;
+  planned_start_at?: string | null;
+  planned_end_at?: string | null;
+
+  comment?: string | null;
+  items: LeadConfirmItemPayload[];
+};
+
+export type LeadConfirmResponse = {
+  lead: Lead;
+  order: {
+    id: number;
+    client_id: number;
+    car_id: number;
+    status: string;
+    total_price: number;
+  };
+};

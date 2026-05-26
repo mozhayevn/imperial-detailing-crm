@@ -1488,3 +1488,73 @@ class LeadAuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LeadConfirmItem(BaseModel):
+    lead_item_id: int | None = None
+    service_id: int
+    material_brand_id: int | None = None
+    service_package_id: int | None = None
+    quantity: int = 1
+    discount_percent: int = 0
+    discount_reason: str | None = None
+
+
+class LeadConfirmRequest(BaseModel):
+    client_id: int | None = None
+    car_id: int | None = None
+
+    client_name: str | None = None
+    phone: str | None = None
+
+    car_type_id: int | None = None
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    car_color: str | None = None
+    plate_number: str | None = None
+
+    assigned_user_id: int | None = None
+    work_bay_id: int | None = None
+    scheduled_at: datetime | None = None
+    planned_start_at: datetime | None = None
+    planned_end_at: datetime | None = None
+
+    comment: str | None = None
+    items: list[LeadConfirmItem]
+
+
+class LeadConfirmResponse(BaseModel):
+    lead: LeadResponse
+    order: OrderResponse
+
+
+class IntegrationLeadItemCreate(BaseModel):
+    service_name_text: str
+    quantity: int = 1
+    comment: str | None = None
+
+
+class IntegrationLeadCreate(BaseModel):
+    source: str
+
+    client_name: str | None = None
+    phone: str
+
+    message: str | None = None
+
+    car_brand: str | None = None
+    car_model: str | None = None
+    car_year: int | None = None
+    car_color: str | None = None
+    plate_number: str | None = None
+
+    preferred_date: datetime | None = None
+    preferred_time: str | None = None
+
+    comment: str | None = None
+
+    external_user_id: str | None = None
+    external_username: str | None = None
+
+    items: list[IntegrationLeadItemCreate]

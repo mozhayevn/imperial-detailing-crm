@@ -315,7 +315,8 @@ export function LeadsPageClient() {
                 <div>
                   <CardTitle>Очередь заявок</CardTitle>
                   <CardDescription>
-                    Сначала менеджер проверяет заявку, потом подтверждает создание заказа.
+                    Сначала менеджер проверяет заявку, потом подтверждает
+                    создание заказа.
                   </CardDescription>
                 </div>
 
@@ -344,7 +345,9 @@ export function LeadsPageClient() {
                       <Button
                         key={option.value}
                         type="button"
-                        variant={status === option.value ? "primary" : "secondary"}
+                        variant={
+                          status === option.value ? "primary" : "secondary"
+                        }
                         onClick={() => setStatus(option.value)}
                       >
                         {option.label}
@@ -417,7 +420,9 @@ export function LeadsPageClient() {
                               Ответственный: {lead.assigned_user_full_name}
                             </div>
                           ) : (
-                            <div className="mt-2">Ответственный не назначен</div>
+                            <div className="mt-2">
+                              Ответственный не назначен
+                            </div>
                           )}
 
                           {lead.created_order_id ? (

@@ -7,16 +7,26 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.deps import require_permission
 from app.models import (
+    Car,
+    CarType,
+    Client,
     Lead,
     LeadAuditLog,
     LeadContact,
     LeadItem,
     MaterialBrand,
+    Order,
+    OrderAuditLog,
+    OrderItem,
+    OrderStatusHistory,
     Service,
     ServicePackage,
     User,
+    WorkBay,
 )
 from app.schemas import (
+    LeadConfirmRequest,
+    LeadConfirmResponse,
     LeadCreate,
     LeadResponse,
     LeadStatusUpdate,
@@ -221,6 +231,29 @@ def get_lead_or_404(db: Session, lead_id: int) -> Lead:
     return lead
 
 
+def build_order_comment_from_lead(
+    lead: Lead,
+    extra_comment: str | None = None,
+) -> str:
+    parts = [
+        f"Создано из заявки #{lead.id}.",
+    ]
+
+    if lead.source:
+        parts.append(f"Источник: {lead.source}.")
+
+    if lead.message:
+        parts.append(f"Сообщение клиента: {lead.message}")
+
+    if lead.comment:
+        parts.append(f"Комментарий заявки: {lead.comment}")
+
+    if extra_comment:
+        parts.append(f"Комментарий при подтверждении: {extra_comment}")
+
+    return "\n".join(parts)
+
+
 @router.get("", response_model=list[LeadResponse])
 def get_leads(
     status: str | None = Query(None),
@@ -334,6 +367,24 @@ def get_lead_contacts(
     return query.order_by(LeadContact.created_at.desc()).all()
 
 
+@router.get("/contacts/{lead_contact_id}", response_model=LeadContactResponse)
+def get_lead_contact(
+    lead_contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.read")),
+):
+    lead_contact = (
+        db.query(LeadContact)
+        .filter(LeadContact.id == lead_contact_id)
+        .first()
+    )
+
+    if not lead_contact:
+        raise HTTPException(status_code=404, detail="Lead contact not found")
+
+    return lead_contact
+
+
 @router.get("/contacts/{lead_contact_id}/leads", response_model=list[LeadResponse])
 def get_lead_contact_leads(
     lead_contact_id: int,
@@ -362,6 +413,254 @@ def get_lead_contact_leads(
         .filter(Lead.lead_contact_id == lead_contact_id)
         .order_by(Lead.created_at.desc())
         .all()
+    )
+
+
+@router.post("/{lead_id}/confirm", response_model=LeadConfirmResponse)
+def confirm_lead(
+    lead_id: int,
+    data: LeadConfirmRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("leads.confirm")),
+):
+    lead = get_lead_or_404(db, lead_id)
+
+    if lead.status == "confirmed":
+        raise HTTPException(
+            status_code=400,
+            detail="Lead is already confirmed",
+        )
+
+    if lead.created_order_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Lead already has created order",
+        )
+
+    if not data.items:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one order item is required",
+        )
+
+    client = None
+
+    if data.client_id is not None:
+        client = db.query(Client).filter(Client.id == data.client_id).first()
+
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+    else:
+        phone = (data.phone or lead.phone or "").strip()
+        client_name = (data.client_name or lead.client_name or "").strip()
+
+        if not phone:
+            raise HTTPException(status_code=400, detail="Phone is required")
+
+        if not client_name:
+            raise HTTPException(status_code=400, detail="Client name is required")
+
+        client = db.query(Client).filter(Client.phone == phone).first()
+
+        if not client:
+            client = Client(
+                full_name=client_name,
+                phone=phone,
+                preferences="Создано из входящей заявки",
+            )
+            db.add(client)
+            db.flush()
+
+    car = None
+
+    if data.car_id is not None:
+        car = db.query(Car).filter(Car.id == data.car_id).first()
+
+        if not car:
+            raise HTTPException(status_code=404, detail="Car not found")
+
+        if car.client_id != client.id:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected car does not belong to selected client",
+            )
+    else:
+        car_brand = (data.car_brand or lead.car_brand or "").strip()
+        car_model = (data.car_model or lead.car_model or "").strip()
+        plate_number = (data.plate_number or lead.plate_number or "").strip() or None
+
+        if not car_brand:
+            raise HTTPException(status_code=400, detail="Car brand is required")
+
+        if not car_model:
+            raise HTTPException(status_code=400, detail="Car model is required")
+
+        if data.car_type_id is not None:
+            car_type = db.query(CarType).filter(CarType.id == data.car_type_id).first()
+
+            if not car_type:
+                raise HTTPException(status_code=404, detail="Car type not found")
+
+        if plate_number:
+            existing_car = db.query(Car).filter(Car.plate_number == plate_number).first()
+
+            if existing_car:
+                if existing_car.client_id != client.id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Car with this plate number belongs to another client",
+                    )
+
+                car = existing_car
+
+        if car is None:
+            car = Car(
+                client_id=client.id,
+                car_type_id=data.car_type_id,
+                brand=car_brand,
+                model=car_model,
+                year=data.car_year if data.car_year is not None else lead.car_year,
+                color=data.car_color if data.car_color is not None else lead.car_color,
+                plate_number=plate_number,
+            )
+            db.add(car)
+            db.flush()
+
+    if data.assigned_user_id is not None:
+        assigned_user = db.query(User).filter(User.id == data.assigned_user_id).first()
+
+        if not assigned_user:
+            raise HTTPException(status_code=404, detail="Assigned user not found")
+
+    if data.work_bay_id is not None:
+        work_bay = db.query(WorkBay).filter(WorkBay.id == data.work_bay_id).first()
+
+        if not work_bay:
+            raise HTTPException(status_code=404, detail="Work bay not found")
+
+    order = Order(
+        client_id=client.id,
+        car_id=car.id,
+        assigned_user_id=data.assigned_user_id,
+        work_bay_id=data.work_bay_id,
+        status="new",
+        scheduled_at=data.scheduled_at,
+        planned_start_at=data.planned_start_at,
+        planned_end_at=data.planned_end_at,
+        comment=build_order_comment_from_lead(lead, data.comment),
+        total_price=0,
+    )
+
+    db.add(order)
+    db.flush()
+
+    for item_data in data.items:
+        service = db.query(Service).filter(Service.id == item_data.service_id).first()
+
+        if not service:
+            raise HTTPException(status_code=404, detail="Service not found")
+
+        if not service.is_active:
+            raise HTTPException(status_code=400, detail="Service is archived")
+
+        if item_data.material_brand_id is not None:
+            material_brand = (
+                db.query(MaterialBrand)
+                .filter(MaterialBrand.id == item_data.material_brand_id)
+                .first()
+            )
+
+            if not material_brand:
+                raise HTTPException(status_code=404, detail="Material brand not found")
+
+        if item_data.service_package_id is not None:
+            service_package = (
+                db.query(ServicePackage)
+                .filter(ServicePackage.id == item_data.service_package_id)
+                .first()
+            )
+
+            if not service_package:
+                raise HTTPException(status_code=404, detail="Service package not found")
+
+            if not service_package.is_active:
+                raise HTTPException(status_code=400, detail="Service package is archived")
+
+        quantity = item_data.quantity or 1
+
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="Quantity must be greater than 0")
+
+        order_item = OrderItem(
+            order_id=order.id,
+            service_id=item_data.service_id,
+            material_brand_id=item_data.material_brand_id,
+            service_package_id=item_data.service_package_id,
+            price=0,
+            quantity=quantity,
+            discount_amount=0,
+            discount_percent=item_data.discount_percent or 0,
+            discount_reason=item_data.discount_reason,
+            discount_applied_by_user_id=current_user.id
+            if item_data.discount_percent and item_data.discount_percent > 0
+            else None,
+            total=0,
+            base_cost_snapshot=0,
+            gross_price_snapshot=0,
+            discount_amount_snapshot=0,
+            final_price_snapshot=0,
+            profit_snapshot=0,
+        )
+
+        db.add(order_item)
+
+    db.add(
+        OrderStatusHistory(
+            order_id=order.id,
+            old_status=None,
+            new_status="new",
+        )
+    )
+
+    db.add(
+        OrderAuditLog(
+            order_id=order.id,
+            actor_user_id=current_user.id,
+            action="created_from_lead",
+            details=f"Order #{order.id} created from lead #{lead.id}",
+        )
+    )
+
+    lead.status = "confirmed"
+    lead.reviewed_by_user_id = current_user.id
+    lead.reviewed_at = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+    lead.created_client_id = client.id
+    lead.created_car_id = car.id
+    lead.created_order_id = order.id
+
+    if lead.lead_contact:
+        lead.lead_contact.created_client_id = client.id
+        lead.lead_contact.updated_at = datetime.utcnow()
+
+    write_lead_audit_log(
+        db=db,
+        lead_id=lead.id,
+        actor_user_id=current_user.id,
+        action="lead_confirmed",
+        details={
+            "message": "Заявка подтверждена, создан заказ",
+            "client_id": client.id,
+            "car_id": car.id,
+            "order_id": order.id,
+        },
+    )
+
+    db.commit()
+
+    return LeadConfirmResponse(
+        lead=get_lead_or_404(db, lead.id),
+        order=order,
     )
 
 

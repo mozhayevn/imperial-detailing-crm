@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
+import { Combobox } from "@/src/components/ui/combobox";
 import {
   Card,
   CardContent,
@@ -19,6 +20,7 @@ import { routes } from "@/src/config/routes";
 import { canAccessByPermission } from "@/src/features/auth/permission-guards";
 import { useAuth } from "@/src/features/auth/use-auth";
 import {
+  confirmLead,
   getLead,
   getLeadAuditLogs,
   updateLeadStatus,
@@ -28,6 +30,8 @@ import type {
   LeadAuditLog,
   LeadStatus,
 } from "@/src/features/leads/types";
+import { getServices } from "@/src/features/services/api";
+import type { Service } from "@/src/features/services/types";
 import { getApiErrorMessage } from "@/src/lib/api/errors";
 import { formatDateTime } from "@/src/lib/formatters";
 
@@ -175,14 +179,33 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [auditLogs, setAuditLogs] = useState<LeadAuditLog[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [selectedServiceIdByLeadItemId, setSelectedServiceIdByLeadItemId] =
+    useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canReadLeads = canAccessByPermission(session, "leads.read");
   const canManageLeads = canAccessByPermission(session, "leads.manage");
   const canConfirmLeads = canAccessByPermission(session, "leads.confirm");
   const canRejectLeads = canAccessByPermission(session, "leads.reject");
+
+  const serviceOptions = services.map((service) => {
+    const requirements = [
+      service.requires_brand ? "нужен бренд материала" : null,
+      service.requires_package ? "нужен пакет услуги" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    return {
+      value: String(service.id),
+      label: service.name,
+      description: requirements || service.description || "Активная услуга CRM",
+    };
+  });
 
   async function loadLead() {
     if (!canReadLeads) {
@@ -194,13 +217,27 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
     setError(null);
 
     try {
-      const [leadResult, auditResult] = await Promise.all([
+      const [leadResult, auditResult, servicesResult] = await Promise.all([
         getLead(leadId),
         getLeadAuditLogs(leadId),
+        getServices(),
       ]);
 
       setLead(leadResult);
       setAuditLogs(auditResult);
+      setServices(servicesResult.filter((service) => service.is_active));
+
+      setSelectedServiceIdByLeadItemId((current) => {
+        const next = { ...current };
+
+        leadResult.items.forEach((item) => {
+          if (item.service_id && !next[item.id]) {
+            next[item.id] = String(item.service_id);
+          }
+        });
+
+        return next;
+      });
     } catch (loadError) {
       setError(getApiErrorMessage(loadError));
     } finally {
@@ -232,6 +269,86 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
     }
   }
 
+  async function handleConfirmLead() {
+    if (!lead) {
+      return;
+    }
+
+    if (lead.items.length === 0) {
+      setError(
+        "В заявке нет услуг. Добавьте хотя бы одну услугу перед подтверждением.",
+      );
+      return;
+    }
+
+    const items = lead.items.map((item) => {
+      const selectedServiceId = selectedServiceIdByLeadItemId[item.id];
+
+      return {
+        lead_item_id: item.id,
+        service_id: selectedServiceId ? Number(selectedServiceId) : 0,
+        material_brand_id: item.material_brand_id,
+        service_package_id: item.service_package_id,
+        quantity: item.quantity || 1,
+        discount_percent: 0,
+        discount_reason: null,
+      };
+    });
+
+    const hasMissingService = items.some((item) => !item.service_id);
+
+    if (hasMissingService) {
+      setError("Для каждой услуги из заявки выберите реальную услугу CRM.");
+      return;
+    }
+
+    const hasClientName = Boolean(lead.client_name?.trim());
+    const hasPhone = Boolean(lead.phone.trim());
+    const hasCarBrand = Boolean(lead.car_brand?.trim());
+    const hasCarModel = Boolean(lead.car_model?.trim());
+
+    if (!hasClientName) {
+      setError("Перед подтверждением укажите имя клиента в заявке.");
+      return;
+    }
+
+    if (!hasPhone) {
+      setError("Перед подтверждением укажите телефон клиента.");
+      return;
+    }
+
+    if (!hasCarBrand || !hasCarModel) {
+      setError("Перед подтверждением укажите марку и модель автомобиля.");
+      return;
+    }
+
+    setIsConfirming(true);
+    setError(null);
+
+    try {
+      const result = await confirmLead(lead.id, {
+        client_name: lead.client_name,
+        phone: lead.phone,
+        car_brand: lead.car_brand,
+        car_model: lead.car_model,
+        car_year: lead.car_year,
+        car_color: lead.car_color,
+        plate_number: lead.plate_number,
+        comment: "Подтверждено из карточки заявки",
+        items,
+      });
+
+      const updatedAuditLogs = await getLeadAuditLogs(lead.id);
+
+      setLead(result.lead);
+      setAuditLogs(updatedAuditLogs);
+    } catch (confirmError) {
+      setError(getApiErrorMessage(confirmError));
+    } finally {
+      setIsConfirming(false);
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -248,9 +365,10 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
       setError(null);
 
       try {
-        const [leadResult, auditResult] = await Promise.all([
+        const [leadResult, auditResult, servicesResult] = await Promise.all([
           getLead(leadId),
           getLeadAuditLogs(leadId),
+          getServices(),
         ]);
 
         if (!isMounted) {
@@ -259,6 +377,19 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
         setLead(leadResult);
         setAuditLogs(auditResult);
+        setServices(servicesResult.filter((service) => service.is_active));
+
+        setSelectedServiceIdByLeadItemId((current) => {
+          const next = { ...current };
+
+          leadResult.items.forEach((item) => {
+            if (item.service_id && !next[item.id]) {
+              next[item.id] = String(item.service_id);
+            }
+          });
+
+          return next;
+        });
       } catch (loadError) {
         if (isMounted) {
           setError(getApiErrorMessage(loadError));
@@ -337,7 +468,6 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
             <CardContent className="p-6">
               <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0">
-
                   <div className="mt-4 text-2xl font-semibold tracking-tight text-white">
                     {lead.client_name || "Клиент без имени"}
                   </div>
@@ -406,8 +536,12 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
                   ) : null}
 
                   {canConfirmLeads && lead.status !== "confirmed" ? (
-                    <Button type="button" disabled>
-                      Подтвердить заказ
+                    <Button
+                      type="button"
+                      disabled={isConfirming || lead.items.length === 0}
+                      onClick={() => void handleConfirmLead()}
+                    >
+                      {isConfirming ? "Подтверждаем..." : "Подтвердить заказ"}
                     </Button>
                   ) : null}
 
@@ -485,7 +619,8 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
                 <CardHeader>
                   <CardTitle>Интересующие услуги</CardTitle>
                   <CardDescription>
-                    Услуги могут быть выбраны из CRM или записаны текстом из сообщения клиента.
+                    Услуги могут быть выбраны из CRM или записаны текстом из
+                    сообщения клиента.
                   </CardDescription>
                 </CardHeader>
 
@@ -527,6 +662,30 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
                                 </Badge>
                               </div>
 
+                              {lead.status !== "confirmed" &&
+                              canConfirmLeads ? (
+                                <div className="mt-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] p-3">
+                                  <Combobox
+                                    label="Реальная услуга CRM для создания заказа"
+                                    placeholder="Выберите услугу"
+                                    value={
+                                      selectedServiceIdByLeadItemId[item.id] ??
+                                      null
+                                    }
+                                    options={serviceOptions}
+                                    onChange={(value) =>
+                                      setSelectedServiceIdByLeadItemId(
+                                        (current) => ({
+                                          ...current,
+                                          [item.id]: value ? String(value) : "",
+                                        }),
+                                      )
+                                    }
+                                    hint="Например, если клиент написал “полировка”, выберите услугу “Полировка”."
+                                  />
+                                </div>
+                              ) : null}
+
                               {item.comment ? (
                                 <div className="mt-3 text-xs leading-5 text-[hsl(var(--muted))]">
                                   {item.comment}
@@ -553,6 +712,22 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
 
                 <CardContent>
                   <div className="space-y-3">
+                    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-3">
+                      <div className="text-xs text-[hsl(var(--muted))]">
+                        Контакт заявки
+                      </div>
+
+                      <div className="mt-3">
+                        <Link
+                          href={routes.leadContactDetails(lead.lead_contact_id)}
+                        >
+                          <Button type="button" variant="secondary">
+                            Открыть контакт
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+
                     <InfoBlock
                       title="Созданный клиент"
                       value={

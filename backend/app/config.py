@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str | None = None
     SMTP_FROM_NAME: str = "Imperial CRM"
     SMTP_USE_TLS: bool = True
+    INTEGRATION_LEADS_TOKEN: str | None = None
 
     class Config:
         env_file = ".env"
