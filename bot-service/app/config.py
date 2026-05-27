@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     MANAGER_CHAT_ID: int | None = None
     LEAVE_UNKNOWN_GROUPS: bool = True
 
+    INSTAGRAM_VERIFY_TOKEN: str | None = None
+    META_PAGE_ACCESS_TOKEN: str | None = None
+    META_APP_SECRET: str | None = None
+
     class Config:
         env_file = ".env"
 
