@@ -461,9 +461,22 @@ def confirm_lead(
         if not client_name:
             raise HTTPException(status_code=400, detail="Client name is required")
 
+        # 1. Телефон заявки — главный идентификатор настоящего CRM-клиента.
         client = db.query(Client).filter(Client.phone == phone).first()
 
-        if not client:
+        # 2. Старую связь LeadContact -> Client используем только если телефон совпадает.
+        if client is None and lead.lead_contact and lead.lead_contact.created_client_id:
+            linked_client = (
+                db.query(Client)
+                .filter(Client.id == lead.lead_contact.created_client_id)
+                .first()
+            )
+
+            if linked_client and linked_client.phone == phone:
+                client = linked_client
+
+        # 3. Если клиента нет — создаем нового.
+        if client is None:
             client = Client(
                 full_name=client_name,
                 phone=phone,
@@ -471,6 +484,20 @@ def confirm_lead(
             )
             db.add(client)
             db.flush()
+
+    if client.phone != (data.phone or lead.phone or "").strip():
+        write_lead_audit_log(
+            db=db,
+            lead_id=lead.id,
+            actor_user_id=current_user.id,
+            action="lead_client_phone_mismatch",
+            details={
+                "message": "Заявка привязана к клиенту по контакту заявки, но телефон в заявке отличается от телефона клиента CRM",
+                "client_id": client.id,
+                "client_phone": client.phone,
+                "lead_phone": (data.phone or lead.phone or "").strip(),
+            },
+        )
 
     car = None
 

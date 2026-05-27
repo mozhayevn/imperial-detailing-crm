@@ -1,8 +1,11 @@
 # Imperial Detailing Bot Service
 
-Сервис для будущих чат-ботов Imperial Detailing CRM.
+Сервис чат-ботов для Imperial Detailing CRM.
 
-На первом этапе реализован Telegram-бот, который собирает данные клиента и создает входящую заявку в CRM через:
+Сейчас реализован Telegram-бот. Архитектура заложена так, чтобы позже добавить WhatsApp и Instagram.
 
 ```text
-POST /integrations/leads
+bot-service/
+  app/
+    common/
+    telegram/

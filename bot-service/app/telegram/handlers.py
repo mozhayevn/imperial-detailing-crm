@@ -16,7 +16,10 @@ from app.telegram.keyboards import (
     start_keyboard,
 )
 from app.telegram.states import LeadForm
-from app.telegram.notifications import notify_managers_about_new_lead
+from app.telegram.notifications import (
+    notify_managers_about_lead_failure,
+    notify_managers_about_new_lead,
+)
 
 
 router = Router()
@@ -106,6 +109,21 @@ def normalize_required_text(value: str | None) -> str | None:
         return None
 
     return text
+
+
+def validate_max_length(value: str | None, max_length: int) -> bool:
+    if value is None:
+        return True
+
+    return len(value.strip()) <= max_length
+
+
+def get_too_long_message(field_name: str, max_length: int) -> str:
+    return (
+        f"{field_name} слишком длинное.\n\n"
+        f"Максимум: {max_length} символов. "
+        "Пожалуйста, сократите текст."
+    )
 
 
 def get_username(message: Message) -> str | None:
@@ -475,6 +493,10 @@ async def client_name_handler(message: Message, state: FSMContext) -> None:
         await message.answer("Пожалуйста, укажите ваше имя.")
         return
 
+    if not validate_max_length(client_name, 80):
+        await message.answer(get_too_long_message("Имя", 80))
+        return
+
     await state.update_data(client_name=client_name)
 
     await message.answer(
@@ -519,6 +541,10 @@ async def car_brand_handler(message: Message, state: FSMContext) -> None:
         await message.answer("Пожалуйста, укажите марку автомобиля.")
         return
 
+    if not validate_max_length(car_brand, 60):
+        await message.answer(get_too_long_message("Марка автомобиля", 60))
+        return
+
     await state.update_data(car_brand=car_brand)
 
     await message.answer("Какая модель автомобиля?")
@@ -531,6 +557,10 @@ async def car_model_handler(message: Message, state: FSMContext) -> None:
 
     if not car_model:
         await message.answer("Пожалуйста, укажите модель автомобиля.")
+        return
+
+    if not validate_max_length(car_model, 60):
+        await message.answer(get_too_long_message("Модель автомобиля", 60))
         return
 
     await state.update_data(car_model=car_model)
@@ -570,7 +600,13 @@ async def car_year_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(LeadForm.car_color)
 async def car_color_handler(message: Message, state: FSMContext) -> None:
-    await state.update_data(car_color=normalize_optional_text(message.text))
+    car_color = normalize_optional_text(message.text)
+
+    if not validate_max_length(car_color, 40):
+        await message.answer(get_too_long_message("Цвет автомобиля", 40))
+        return
+
+    await state.update_data(car_color=car_color)
 
     await message.answer(
         "Укажите госномер, если хотите.",
@@ -581,7 +617,13 @@ async def car_color_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(LeadForm.plate_number)
 async def plate_number_handler(message: Message, state: FSMContext) -> None:
-    await state.update_data(plate_number=normalize_optional_text(message.text))
+    plate_number = normalize_optional_text(message.text)
+
+    if not validate_max_length(plate_number, 20):
+        await message.answer(get_too_long_message("Госномер", 20))
+        return
+
+    await state.update_data(plate_number=plate_number)
 
     await message.answer(
         "Какая услуга вас интересует?\n\n"
@@ -597,6 +639,10 @@ async def service_name_handler(message: Message, state: FSMContext) -> None:
 
     if not service_name:
         await message.answer("Пожалуйста, выберите услугу или нажмите “Другое”.")
+        return
+
+    if not validate_max_length(service_name, 120):
+        await message.answer(get_too_long_message("Название услуги", 120))
         return
 
     if service_name.lower() == "другое":
@@ -625,6 +671,10 @@ async def custom_service_name_handler(message: Message, state: FSMContext) -> No
         await message.answer("Пожалуйста, напишите название услуги.")
         return
 
+    if not validate_max_length(service_name, 120):
+        await message.answer(get_too_long_message("Название услуги", 120))
+        return
+
     await state.update_data(service_name=service_name)
 
     await message.answer(
@@ -637,7 +687,13 @@ async def custom_service_name_handler(message: Message, state: FSMContext) -> No
 
 @router.message(LeadForm.preferred_time)
 async def preferred_time_handler(message: Message, state: FSMContext) -> None:
-    await state.update_data(preferred_time=normalize_optional_text(message.text))
+    preferred_time = normalize_optional_text(message.text)
+
+    if not validate_max_length(preferred_time, 120):
+        await message.answer(get_too_long_message("Удобное время", 120))
+        return
+
+    await state.update_data(preferred_time=preferred_time)
 
     await message.answer(
         "Есть ли комментарий или пожелания?",
@@ -648,7 +704,13 @@ async def preferred_time_handler(message: Message, state: FSMContext) -> None:
 
 @router.message(LeadForm.comment)
 async def comment_handler(message: Message, state: FSMContext) -> None:
-    await state.update_data(comment=normalize_optional_text(message.text))
+    comment = normalize_optional_text(message.text)
+
+    if not validate_max_length(comment, 500):
+        await message.answer(get_too_long_message("Комментарий", 500))
+        return
+
+    await state.update_data(comment=comment)
 
     data = await state.get_data()
 
@@ -675,6 +737,15 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
         await message.answer("Нажмите “Подтвердить заявку” или “Заполнить заново”.")
         return
 
+    data = await state.get_data()
+
+    if data.get("is_submitting"):
+        await message.answer(
+            "Заявка уже отправляется. Пожалуйста, подождите несколько секунд."
+        )
+        return
+
+    await state.update_data(is_submitting=True)
     data = await state.get_data()
 
     required_fields = {
@@ -728,16 +799,25 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
 
     try:
         created_lead = await create_lead(payload)
-    except CrmClientError:
+    except CrmClientError as error:
         logger.exception(
             "Failed to create lead in CRM from Telegram bot. telegram_user_id=%s username=%s",
             message.from_user.id if message.from_user else None,
             get_username(message),
         )
 
+        await notify_managers_about_lead_failure(
+            bot=message.bot,
+            payload=payload,
+            error_message=str(error),
+        )
+
+        await state.update_data(is_submitting=False)
+
         await message.answer(
             "Не удалось отправить заявку в CRM.\n\n"
-            "Пожалуйста, попробуйте позже или свяжитесь с менеджером Imperial Detailing.",
+            "Мы уже передали информацию менеджерам. "
+            "Пожалуйста, попробуйте позже или свяжитесь с Imperial Detailing напрямую.",
             reply_markup=ReplyKeyboardRemove(),
         )
         return

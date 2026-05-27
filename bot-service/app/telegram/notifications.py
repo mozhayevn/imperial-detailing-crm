@@ -140,3 +140,82 @@ async def notify_managers_about_new_lead(
             settings.MANAGER_CHAT_ID,
             created_lead.get("id"),
         )
+
+
+def build_manager_lead_failed_message(
+    payload: LeadPayload,
+    error_message: str,
+) -> str:
+    car_parts = [
+        payload.car_brand,
+        payload.car_model,
+        payload.car_year,
+    ]
+
+    car_label = " ".join(
+        str(part).strip()
+        for part in car_parts
+        if part is not None and str(part).strip()
+    )
+
+    if not car_label:
+        car_label = "не указано"
+
+    service_names = [
+        item.service_name_text
+        for item in payload.items
+        if item.service_name_text
+    ]
+
+    services_label = ", ".join(service_names) if service_names else "не указано"
+
+    safe_error_message = error_message.strip()
+
+    if len(safe_error_message) > 500:
+        safe_error_message = safe_error_message[:500] + "..."
+
+    return (
+        "⚠️ Ошибка создания заявки из Telegram\n\n"
+        "Клиент заполнил заявку, но бот не смог отправить ее в CRM.\n\n"
+        "👤 Клиент\n"
+        f"Имя: {format_empty(payload.client_name)}\n"
+        f"Телефон: {format_empty(payload.phone)}\n\n"
+        "🚗 Автомобиль\n"
+        f"Авто: {car_label}\n"
+        f"Цвет: {format_empty(payload.car_color)}\n"
+        f"Госномер: {format_empty(payload.plate_number)}\n\n"
+        "🧾 Услуга\n"
+        f"{services_label}\n\n"
+        "🕒 Удобное время\n"
+        f"{format_empty(payload.preferred_time)}\n\n"
+        "💬 Комментарий\n"
+        f"{format_empty(payload.comment)}\n\n"
+        "Техническая ошибка\n"
+        f"{safe_error_message}"
+    )
+
+
+async def notify_managers_about_lead_failure(
+    bot: Bot,
+    payload: LeadPayload,
+    error_message: str,
+) -> None:
+    if settings.MANAGER_CHAT_ID is None:
+        logger.info("Manager chat id is not configured. Failure notification skipped.")
+        return
+
+    message_text = build_manager_lead_failed_message(
+        payload=payload,
+        error_message=error_message,
+    )
+
+    try:
+        await bot.send_message(
+            chat_id=settings.MANAGER_CHAT_ID,
+            text=message_text,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send lead failure notification to manager chat. chat_id=%s",
+            settings.MANAGER_CHAT_ID,
+        )

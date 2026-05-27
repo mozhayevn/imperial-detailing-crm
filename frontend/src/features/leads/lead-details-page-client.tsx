@@ -846,34 +846,60 @@ export function LeadDetailsPageClient({ leadId }: { leadId: string }) {
                         Контакт заявки
                       </div>
 
+                      <div className="mt-2 text-sm font-semibold text-white">
+                        Telegram / источник заявки
+                      </div>
+
                       <div className="mt-3">
                         <Link
                           href={routes.leadContactDetails(lead.lead_contact_id)}
                         >
                           <Button type="button" variant="secondary">
-                            Открыть контакт
+                            Открыть контакт заявки
                           </Button>
                         </Link>
                       </div>
                     </div>
 
-                    <InfoBlock
-                      title="Созданный клиент"
-                      value={
-                        lead.created_client_id
-                          ? `Клиент #${lead.created_client_id}`
-                          : null
-                      }
-                    />
+                    {lead.created_client_id ? (
+                      <div className="rounded-2xl border border-[rgb(74_222_128_/_0.22)] bg-[rgb(74_222_128_/_0.08)] p-3">
+                        <div className="text-xs text-[rgb(134_239_172)]">
+                          Клиент CRM
+                        </div>
 
-                    <InfoBlock
-                      title="Созданный автомобиль"
-                      value={
-                        lead.created_car_id
-                          ? `Автомобиль #${lead.created_car_id}`
-                          : null
-                      }
-                    />
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          Клиент #{lead.created_client_id}
+                        </div>
+
+                        <div className="mt-3">
+                          <Link
+                            href={routes.clientDetails(lead.created_client_id)}
+                          >
+                            <Button type="button">Открыть клиента CRM</Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {lead.created_car_id ? (
+                      <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-3">
+                        <div className="text-xs text-[hsl(var(--muted))]">
+                          Автомобиль CRM
+                        </div>
+
+                        <div className="mt-2 text-sm font-semibold text-white">
+                          Авто #{lead.created_car_id}
+                        </div>
+
+                        <div className="mt-3">
+                          <Link href={routes.carDetails(lead.created_car_id)}>
+                            <Button type="button" variant="secondary">
+                              Открыть автомобиль
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <InfoBlock
                       title="Созданный заказ"
