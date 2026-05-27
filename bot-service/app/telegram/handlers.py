@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
@@ -9,6 +10,7 @@ from app.common.schemas import LeadItemPayload, LeadPayload
 from app.config import settings
 from app.crm_client import CrmClientError, create_lead, get_my_leads
 from app.telegram.keyboards import (
+    after_success_keyboard,
     confirm_keyboard,
     phone_keyboard,
     service_keyboard,
@@ -26,8 +28,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 HELP_TEXT = (
-    "Imperial Detailing CRM Bot\n\n"
-    "Я помогу оставить заявку на детейлинг.\n\n"
+    "Помощь по боту Imperial Detailing\n\n"
     "Что можно сделать:\n"
     "/start — открыть главное меню\n"
     "/new — начать новую заявку\n"
@@ -36,18 +37,20 @@ HELP_TEXT = (
     "/cancel — отменить заполнение\n"
     "/help — помощь\n\n"
     "Как работает заявка:\n"
-    "1. Вы заполняете данные автомобиля и услуги.\n"
+    "1. Вы указываете данные автомобиля и интересующие услуги.\n"
     "2. Бот отправляет заявку в CRM.\n"
     "3. Менеджер проверяет заявку.\n"
     "4. После подтверждения менеджер создает заказ.\n\n"
-    "Бот не рассчитывает финальную цену и не создает заказ автоматически."
+    "Важно: бот не рассчитывает финальную цену, не принимает оплату "
+    "и не создает заказ автоматически."
 )
 
 
 START_TEXT = (
     "Здравствуйте! Это бот Imperial Detailing.\n\n"
-    "Я помогу оставить заявку на услугу детейлинга. "
-    "После отправки заявки менеджер свяжется с вами для подтверждения записи."
+    "Я помогу быстро оставить заявку на детейлинг автомобиля.\n\n"
+    "После отправки заявки менеджер получит ее в CRM, "
+    "уточнит детали, рассчитает стоимость и подтвердит запись."
 )
 
 REQUESTS_STUB_TEXT = (
@@ -65,8 +68,10 @@ ABOUT_TEXT = (
     "• Обклейка защитной пленкой\n"
     "• PDR — удаление вмятин без покраски\n"
     "• Шумоизоляция\n\n"
-    "Через этого бота вы можете оставить заявку. "
-    "Менеджер получит ее в CRM, уточнит детали, рассчитает стоимость и подтвердит запись."
+    "Через этого бота можно оставить заявку. "
+    "Менеджер получит ее в CRM, уточнит детали, рассчитает стоимость "
+    "и подтвердит запись.\n\n"
+    "Чтобы начать, нажмите “Оставить заявку”."
 )
 
 FALLBACK_TEXT = (
@@ -79,11 +84,11 @@ FALLBACK_TEXT = (
 )
 
 LEAD_STATUS_LABELS = {
-    "new": "новая",
-    "in_review": "в обработке",
-    "confirmed": "подтверждена",
-    "rejected": "отклонена",
-    "duplicate": "дубль",
+    "new": "🆕 новая",
+    "in_review": "🔎 в обработке",
+    "confirmed": "✅ подтверждена",
+    "rejected": "❌ отклонена",
+    "duplicate": "♻️ дубль",
 }
 
 
@@ -241,14 +246,53 @@ def build_lead_summary(data: dict) -> str:
         f"Авто: {car_label}\n"
         f"Цвет: {format_empty(data.get('car_color'))}\n"
         f"Госномер: {format_empty(data.get('plate_number'))}\n\n"
-        "🧾 Услуга\n"
-        f"Интересует: {format_empty(data.get('service_name'))}\n\n"
+        "🧾 Услуги\n"
+        f"{format_services_list(get_services_from_state_data(data))}\n\n"
         "🕒 Удобное время\n"
         f"{format_empty(data.get('preferred_time'))}\n\n"
         "💬 Комментарий\n"
         f"{format_empty(data.get('comment'))}\n\n"
         "Если все верно, нажмите “Подтвердить заявку”."
     )
+
+
+def get_services_from_state_data(data: dict) -> list[str]:
+    services = data.get("services")
+
+    if isinstance(services, list):
+        return [
+            str(service).strip()
+            for service in services
+            if str(service).strip()
+        ]
+
+    service_name = data.get("service_name")
+
+    if service_name:
+        return [str(service_name).strip()]
+
+    return []
+
+
+def format_services_list(services: list[str]) -> str:
+    if not services:
+        return "не указано"
+
+    return "\n".join(f"• {service}" for service in services)
+
+
+def add_service_to_list(services: list[str], service_name: str) -> list[str]:
+    normalized_service_name = service_name.strip()
+
+    if not normalized_service_name:
+        return services
+
+    existing_names = {service.lower() for service in services}
+
+    if normalized_service_name.lower() in existing_names:
+        return services
+
+    return [*services, normalized_service_name]
 
 
 def get_telegram_external_user_id(message: Message) -> str | None:
@@ -262,6 +306,19 @@ def get_lead_status_label(status: str) -> str:
     return LEAD_STATUS_LABELS.get(status, status)
 
 
+def format_datetime_for_user(value: str | None) -> str:
+    if not value:
+        return "дата не указана"
+
+    try:
+        normalized_value = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized_value)
+    except ValueError:
+        return value
+
+    return parsed.strftime("%d.%m.%Y %H:%M")
+
+
 def build_my_leads_text(leads_response) -> str:
     if not leads_response.leads:
         return (
@@ -269,7 +326,7 @@ def build_my_leads_text(leads_response) -> str:
             "Чтобы оставить заявку, нажмите “Оставить заявку” или отправьте /new."
         )
 
-    lines = ["Ваши последние заявки:\n"]
+    lines = ["📋 Ваши последние заявки:\n"]
 
     for lead in leads_response.leads:
         car_parts = [
@@ -277,6 +334,7 @@ def build_my_leads_text(leads_response) -> str:
             lead.car_model,
             str(lead.car_year) if lead.car_year else None,
         ]
+
         car_label = " ".join(
             part.strip()
             for part in car_parts
@@ -295,8 +353,10 @@ def build_my_leads_text(leads_response) -> str:
         services_label = ", ".join(service_names) if service_names else "услуги не указаны"
 
         lines.append(
-            f"#{lead.id} — {get_lead_status_label(lead.status)}\n"
-            f"{car_label}\n"
+            f"Заявка #{lead.id}\n"
+            f"Статус: {get_lead_status_label(lead.status)}\n"
+            f"Дата: {format_datetime_for_user(lead.created_at)}\n"
+            f"Авто: {car_label}\n"
             f"Услуги: {services_label}"
         )
 
@@ -304,12 +364,19 @@ def build_my_leads_text(leads_response) -> str:
             lines.append(f"Удобное время: {lead.preferred_time}")
 
         if lead.created_order_id:
-            lines.append(f"Заказ CRM: #{lead.created_order_id}")
+            lines.append(f"✅ Заказ создан в CRM: #{lead.created_order_id}")
+        elif lead.status == "confirmed":
+            lines.append("✅ Заявка подтверждена менеджером.")
+        elif lead.status == "new":
+            lines.append("Менеджер скоро проверит заявку.")
+        elif lead.status == "in_review":
+            lines.append("Менеджер уже обрабатывает заявку.")
 
         lines.append("")
 
     lines.append(
-        "Если нужно оставить новую заявку, нажмите “Оставить заявку” или отправьте /new."
+        "Показаны последние 5 заявок.\n\n"
+        "Чтобы оставить новую заявку, нажмите “Оставить заявку” или отправьте /new."
     )
 
     return "\n".join(lines)
@@ -405,7 +472,7 @@ async def requests_handler(message: Message) -> None:
         leads_response = await get_my_leads(
             source=settings.BOT_SOURCE,
             external_user_id=external_user_id,
-            limit=10,
+            limit=5,
         )
     except CrmClientError:
         logger.exception(
@@ -465,6 +532,21 @@ async def about_button_handler(message: Message) -> None:
 
 @router.message(lambda message: message.text == "Оставить заявку")
 async def start_lead_button_handler(message: Message, state: FSMContext) -> None:
+    if is_group_chat(message):
+        if await leave_unknown_group_if_needed(message):
+            return
+
+        await message.answer("Заявки создаются только в личном чате с ботом.")
+        return
+
+    await start_lead_form(message, state)
+
+
+@router.message(lambda message: message.text == "Оставить еще одну заявку")
+async def start_another_lead_button_handler(
+    message: Message,
+    state: FSMContext,
+) -> None:
     if is_group_chat(message):
         if await leave_unknown_group_if_needed(message):
             return
@@ -623,11 +705,11 @@ async def plate_number_handler(message: Message, state: FSMContext) -> None:
         await message.answer(get_too_long_message("Госномер", 20))
         return
 
-    await state.update_data(plate_number=plate_number)
+    await state.update_data(services=[])
 
     await message.answer(
-        "Какая услуга вас интересует?\n\n"
-        "Выберите популярную услугу или нажмите “Другое”.",
+        "Какие услуги вас интересуют?\n\n"
+        "Выберите одну или несколько услуг. Когда закончите, нажмите “Готово”.",
         reply_markup=service_keyboard(),
     )
     await state.set_state(LeadForm.service_name)
@@ -641,26 +723,52 @@ async def service_name_handler(message: Message, state: FSMContext) -> None:
         await message.answer("Пожалуйста, выберите услугу или нажмите “Другое”.")
         return
 
-    if not validate_max_length(service_name, 120):
-        await message.answer(get_too_long_message("Название услуги", 120))
+    data = await state.get_data()
+    services = get_services_from_state_data(data)
+
+    if service_name.lower() == "готово":
+        if not services:
+            await message.answer(
+                "Выберите хотя бы одну услугу перед продолжением.",
+                reply_markup=service_keyboard(),
+            )
+            return
+
+        await state.update_data(service_name=", ".join(services))
+
+        await message.answer(
+            "Когда вам удобно приехать?\n\n"
+            "Например: завтра после 15:00 или на выходных.",
+            reply_markup=skip_keyboard(),
+        )
+        await state.set_state(LeadForm.preferred_time)
         return
 
     if service_name.lower() == "другое":
         await message.answer(
-            "Напишите, какая услуга вас интересует.",
+            "Напишите, какая еще услуга вас интересует.",
             reply_markup=ReplyKeyboardRemove(),
         )
         await state.set_state(LeadForm.custom_service_name)
         return
 
-    await state.update_data(service_name=service_name)
+    if not validate_max_length(service_name, 120):
+        await message.answer(get_too_long_message("Название услуги", 120))
+        return
+
+    services = add_service_to_list(services, service_name)
+
+    await state.update_data(
+        services=services,
+        service_name=", ".join(services),
+    )
 
     await message.answer(
-        "Когда вам удобно приехать?\n\n"
-        "Например: завтра после 15:00 или на выходных.",
-        reply_markup=skip_keyboard(),
+        "Добавлено:\n"
+        f"{format_services_list(services)}\n\n"
+        "Можете выбрать еще услугу или нажать “Готово”.",
+        reply_markup=service_keyboard(),
     )
-    await state.set_state(LeadForm.preferred_time)
 
 
 @router.message(LeadForm.custom_service_name)
@@ -675,14 +783,22 @@ async def custom_service_name_handler(message: Message, state: FSMContext) -> No
         await message.answer(get_too_long_message("Название услуги", 120))
         return
 
-    await state.update_data(service_name=service_name)
+    data = await state.get_data()
+    services = get_services_from_state_data(data)
+    services = add_service_to_list(services, service_name)
+
+    await state.update_data(
+        services=services,
+        service_name=", ".join(services),
+    )
 
     await message.answer(
-        "Когда вам удобно приехать?\n\n"
-        "Например: завтра после 15:00 или на выходных.",
-        reply_markup=skip_keyboard(),
+        "Добавлено:\n"
+        f"{format_services_list(services)}\n\n"
+        "Можете выбрать еще услугу или нажать “Готово”.",
+        reply_markup=service_keyboard(),
     )
-    await state.set_state(LeadForm.preferred_time)
+    await state.set_state(LeadForm.service_name)
 
 
 @router.message(LeadForm.preferred_time)
@@ -753,7 +869,6 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
         "phone": "телефон",
         "car_brand": "марка автомобиля",
         "car_model": "модель автомобиля",
-        "service_name": "услуга",
     }
 
     missing_fields = [
@@ -772,13 +887,27 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
+    services = get_services_from_state_data(data)
+
+    if not services:
+        await message.answer(
+            "Не хватает обязательных данных: услуга.\n\n"
+            "Начните заявку заново командой /new.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await state.clear()
+        return
+
     external_user_id = str(message.from_user.id) if message.from_user else None
 
     payload = LeadPayload(
         source=settings.BOT_SOURCE,
         client_name=data.get("client_name"),
         phone=data["phone"],
-        message=f"Заявка из Telegram-бота. Интересующая услуга: {data.get('service_name')}",
+        message=(
+                "Заявка из Telegram-бота. Интересующие услуги: "
+                + ", ".join(get_services_from_state_data(data))
+        ),
         car_brand=data.get("car_brand"),
         car_model=data.get("car_model"),
         car_year=data.get("car_year"),
@@ -790,10 +919,11 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
         external_username=get_username(message),
         items=[
             LeadItemPayload(
-                service_name_text=data["service_name"],
+                service_name_text=service_name,
                 quantity=1,
                 comment=data.get("comment"),
             )
+            for service_name in get_services_from_state_data(data)
         ],
     )
 
@@ -835,8 +965,8 @@ async def confirm_handler(message: Message, state: FSMContext) -> None:
         f"Номер заявки: #{created_lead.get('id')}.\n\n"
         "Менеджер Imperial Detailing скоро свяжется с вами, "
         "уточнит детали и подтвердит запись.\n\n"
-        "Чтобы оставить новую заявку, нажмите /new.",
-        reply_markup=ReplyKeyboardRemove(),
+        "Вы можете посмотреть статус в разделе “Мои заявки”.",
+        reply_markup=after_success_keyboard(),
     )
 
 
