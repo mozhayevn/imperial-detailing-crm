@@ -1600,3 +1600,31 @@ class IntegrationMyLeadResponse(BaseModel):
 class IntegrationMyLeadsResponse(BaseModel):
     lead_contact_id: int | None = None
     leads: list[IntegrationMyLeadResponse] = []
+
+
+class WorkBayScheduleOrderResponse(BaseModel):
+    id: int
+    client_id: int
+    car_id: int
+    work_bay_id: int
+
+    client_name: str | None = None
+    car_label: str | None = None
+
+    status: str
+    planned_start_at: datetime
+    planned_end_at: datetime
+    total_price: int
+
+
+class WorkBayScheduleBayResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    orders: list[WorkBayScheduleOrderResponse] = []
+
+
+class WorkBayScheduleResponse(BaseModel):
+    date: date
+    bays: list[WorkBayScheduleBayResponse] = []
+    unscheduled_orders: list[WorkBayScheduleOrderResponse] = []

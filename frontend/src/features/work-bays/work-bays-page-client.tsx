@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { routes } from "@/src/config/routes";
+
 import { useEffect, useMemo, useState } from "react";
 import { DateTimeInput } from "@/src/components/ui/date-time-input";
 import { Badge } from "@/src/components/ui/badge";
@@ -343,6 +346,13 @@ export function WorkBaysPageClient() {
         eyebrow="Рабочие боксы"
         title="Рабочие боксы"
         description="Управление рабочими боксами и проверка доступности по расписанию заказов."
+        actions={
+          <Link href={routes.workBaySchedule}>
+            <Button type="button" variant="secondary">
+              Расписание
+            </Button>
+          </Link>
+        }
       />
 
       {!canReadWorkBays ? (

@@ -3,6 +3,7 @@ import type {
   WorkBay,
   WorkBayAvailability,
   WorkBayCreatePayload,
+  WorkBaySchedule,
   WorkBayUpdatePayload,
 } from "@/src/features/work-bays/types";
 
@@ -61,6 +62,21 @@ export async function getAvailableWorkBays(params: {
 
   return apiRequest<WorkBayAvailability[]>(
     `/work-bays/available?${searchParams.toString()}`,
+    {
+      method: "GET",
+    },
+  );
+}
+
+export async function getWorkBaySchedule(params: {
+  schedule_date: string;
+}): Promise<WorkBaySchedule> {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("schedule_date", params.schedule_date);
+
+  return apiRequest<WorkBaySchedule>(
+    `/work-bays/schedule?${searchParams.toString()}`,
     {
       method: "GET",
     },

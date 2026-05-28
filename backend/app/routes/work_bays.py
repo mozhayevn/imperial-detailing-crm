@@ -1,13 +1,50 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import require_permission
 from app.models import WorkBay, User, Order
-from app.schemas import WorkBayCreate, WorkBayUpdate, WorkBayResponse, WorkBayAvailabilityResponse
-from datetime import datetime
+from app.schemas import (
+    WorkBayCreate,
+    WorkBayUpdate,
+    WorkBayResponse,
+    WorkBayAvailabilityResponse,
+    WorkBayScheduleBayResponse,
+    WorkBayScheduleOrderResponse,
+    WorkBayScheduleResponse,
+)
+from datetime import datetime, date, time
 
 router = APIRouter(prefix="/work-bays", tags=["Work Bays"])
+
+
+def build_schedule_order_response(order: Order) -> WorkBayScheduleOrderResponse:
+    client_name = order.client.full_name if order.client else None
+
+    car_label = None
+    if order.car:
+        car_label = " ".join(
+            part
+            for part in [
+                order.car.brand,
+                order.car.model,
+                str(order.car.year) if order.car.year else None,
+            ]
+            if part
+        )
+
+    return WorkBayScheduleOrderResponse(
+        id=order.id,
+        client_id=order.client_id,
+        car_id=order.car_id,
+        work_bay_id=order.work_bay_id,
+        client_name=client_name,
+        car_label=car_label,
+        status=order.status,
+        planned_start_at=order.planned_start_at,
+        planned_end_at=order.planned_end_at,
+        total_price=order.total_price,
+    )
 
 
 @router.post("/", response_model=WorkBayResponse)
@@ -80,6 +117,73 @@ def get_available_work_bays(
         )
 
     return result
+
+
+@router.get("/schedule", response_model=WorkBayScheduleResponse)
+def get_work_bays_schedule(
+    schedule_date: date = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("work_bays.read")),
+):
+    day_start = datetime.combine(schedule_date, time.min)
+    day_end = datetime.combine(schedule_date, time.max)
+
+    bays = (
+        db.query(WorkBay)
+        .filter(WorkBay.is_active.is_(True))
+        .order_by(WorkBay.id.asc())
+        .all()
+    )
+
+    orders = (
+        db.query(Order)
+        .options(
+            joinedload(Order.client),
+            joinedload(Order.car),
+            joinedload(Order.work_bay),
+        )
+        .filter(
+            Order.planned_start_at.isnot(None),
+            Order.planned_end_at.isnot(None),
+            Order.planned_start_at < day_end,
+            Order.planned_end_at > day_start,
+            Order.status != "canceled",
+            Order.status != "delivered",
+        )
+        .order_by(Order.planned_start_at.asc())
+        .all()
+    )
+
+    orders_by_bay_id: dict[int, list[Order]] = {}
+
+    unscheduled_orders: list[Order] = []
+
+    for order in orders:
+        if order.work_bay_id is None:
+            unscheduled_orders.append(order)
+            continue
+
+        orders_by_bay_id.setdefault(order.work_bay_id, []).append(order)
+
+    return WorkBayScheduleResponse(
+        date=schedule_date,
+        bays=[
+            WorkBayScheduleBayResponse(
+                id=bay.id,
+                name=bay.name,
+                description=bay.description,
+                orders=[
+                    build_schedule_order_response(order)
+                    for order in orders_by_bay_id.get(bay.id, [])
+                ],
+            )
+            for bay in bays
+        ],
+        unscheduled_orders=[
+            build_schedule_order_response(order)
+            for order in unscheduled_orders
+        ],
+    )
 
 
 @router.get("/{bay_id}", response_model=WorkBayResponse)
