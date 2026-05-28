@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { routes } from "@/src/config/routes";
 import { useAuth } from "@/src/features/auth/use-auth";
 import { canAccessByPermission } from "@/src/features/auth/permission-guards";
@@ -67,9 +68,41 @@ function mapOrderToListItem(order: {
   };
 }
 
+function getNumberSearchParam(
+  searchParams: URLSearchParams,
+  key: string,
+): number | null {
+  const value = searchParams.get(key);
+
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getInitialOrderFilters(searchParams: URLSearchParams): OrderFilters {
+  return {
+    status: searchParams.get("status") || null,
+    client_id: getNumberSearchParam(searchParams, "client_id"),
+    car_id: getNumberSearchParam(searchParams, "car_id"),
+    work_bay_id: getNumberSearchParam(searchParams, "work_bay_id"),
+    assigned_user_id: getNumberSearchParam(searchParams, "assigned_user_id"),
+  };
+}
+
 export function OrdersPageClient() {
+  const searchParams = useSearchParams();
+
+  const initialFilters = useMemo(
+    () => getInitialOrderFilters(searchParams),
+    [searchParams],
+  );
+
   const [orders, setOrders] = useState<OrderListItem[]>([]);
-  const [filters, setFilters] = useState<OrderFilters>({});
+  const [filters, setFilters] = useState<OrderFilters>(initialFilters);
   const [searchValue, setSearchValue] = useState("");
 
   const [workBays, setWorkBays] = useState<WorkBay[]>([]);
@@ -107,10 +140,11 @@ export function OrdersPageClient() {
       setError(null);
 
       try {
-        const data = await getOrders({});
+        const data = await getOrders(initialFilters);
 
         if (isMounted) {
           setOrders(data);
+          setFilters(initialFilters);
         }
       } catch (loadError) {
         if (isMounted) {
@@ -129,7 +163,7 @@ export function OrdersPageClient() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [initialFilters]);
 
   useEffect(() => {
     let isMounted = true;
@@ -241,6 +275,12 @@ export function OrdersPageClient() {
         description="Ищите заказы по телефону, госномеру, номеру заказа или ФИО клиента. Данные загружаются из существующего backend API."
         actions={
           <>
+            <Link href={routes.workBaySchedule}>
+              <Button type="button" variant="secondary">
+                Расписание боксов
+              </Button>
+            </Link>
+
             <Button variant="secondary" onClick={() => void loadOrders()}>
               Обновить
             </Button>

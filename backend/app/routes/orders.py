@@ -96,7 +96,13 @@ def check_time_conflict(
     exclude_order_id: int | None = None,
 ):
     if not planned_start_at or not planned_end_at or not work_bay_id:
-        return
+        return None
+
+    if planned_start_at >= planned_end_at:
+        raise HTTPException(
+            status_code=400,
+            detail="planned_end_at must be greater than planned_start_at",
+        )
 
     query = db.query(Order).filter(
         Order.planned_start_at.isnot(None),
@@ -117,8 +123,15 @@ def check_time_conflict(
     if conflict:
         raise HTTPException(
             status_code=400,
-            detail=f"Time conflict in work bay #{work_bay_id} with order #{conflict.id}"
+            detail={
+                "code": "work_bay_time_conflict",
+                "message": f"Work bay #{work_bay_id} is already occupied by order #{conflict.id}",
+                "work_bay_id": work_bay_id,
+                "conflicting_order_id": conflict.id,
+            },
         )
+
+    return None
 
 
 def user_has_permission(user: User, permission_code: str, db: Session) -> bool:
@@ -561,11 +574,23 @@ def update_order(
         "status": order.status,
     }
 
+    effective_work_bay_id = data.work_bay_id if data.work_bay_id is not None else order.work_bay_id
+    effective_planned_start_at = (
+        data.planned_start_at
+        if data.planned_start_at is not None
+        else order.planned_start_at
+    )
+    effective_planned_end_at = (
+        data.planned_end_at
+        if data.planned_end_at is not None
+        else order.planned_end_at
+    )
+
     check_time_conflict(
         db=db,
-        planned_start_at=data.planned_start_at,
-        planned_end_at=data.planned_end_at,
-        work_bay_id=data.work_bay_id,
+        planned_start_at=effective_planned_start_at,
+        planned_end_at=effective_planned_end_at,
+        work_bay_id=effective_work_bay_id,
         exclude_order_id=order.id,
     )
 

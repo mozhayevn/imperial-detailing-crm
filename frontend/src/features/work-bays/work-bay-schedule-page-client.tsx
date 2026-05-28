@@ -104,12 +104,9 @@ function getOrderDurationLabel(order: WorkBayScheduleOrder) {
 
 function ScheduleOrderCard({ order }: { order: WorkBayScheduleOrder }) {
   return (
-    <Link
-      href={routes.orderDetails(order.id)}
-      className="block rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-4 transition hover:border-[hsl(var(--primary))]"
-    >
+    <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-4 transition hover:border-[hsl(var(--primary))]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
+        <Link href={routes.orderDetails(order.id)} className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={getOrderStatusTone(order.status)}>
               {getOrderStatusLabel(order.status)}
@@ -125,7 +122,7 @@ function ScheduleOrderCard({ order }: { order: WorkBayScheduleOrder }) {
           <div className="mt-1 text-sm leading-6 text-[hsl(var(--muted))]">
             {order.car_label ?? `Авто #${order.car_id}`}
           </div>
-        </div>
+        </Link>
 
         <div className="shrink-0 text-left sm:text-right">
           <div className="text-sm font-semibold text-white">
@@ -135,9 +132,23 @@ function ScheduleOrderCard({ order }: { order: WorkBayScheduleOrder }) {
           <div className="mt-1 text-xs text-[hsl(var(--muted))]">
             {formatCurrency(order.total_price)}
           </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 sm:justify-end">
+            <Link href={routes.orderDetails(order.id)}>
+              <Button type="button" variant="secondary" size="sm">
+                Открыть
+              </Button>
+            </Link>
+
+            <Link href={routes.editOrder(order.id)}>
+              <Button type="button" variant="secondary" size="sm">
+                Редактировать
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -254,6 +265,16 @@ export function WorkBaySchedulePageClient() {
               <Button type="button" variant="secondary">
                 К списку боксов
               </Button>
+            </Link>
+
+            <Link href={routes.orders}>
+              <Button type="button" variant="secondary">
+                К заказам
+              </Button>
+            </Link>
+
+            <Link href={routes.newOrder}>
+              <Button type="button">Создать заказ</Button>
             </Link>
 
             <Button
@@ -392,11 +413,21 @@ export function WorkBaySchedulePageClient() {
                           </CardDescription>
                         </div>
 
-                        <Badge tone={bay.orders.length > 0 ? "warning" : "success"}>
-                          {bay.orders.length > 0
-                            ? `${bay.orders.length} заказ.`
-                            : "Свободен"}
-                        </Badge>
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          <Badge
+                            tone={bay.orders.length > 0 ? "warning" : "success"}
+                          >
+                            {bay.orders.length > 0
+                              ? `${bay.orders.length} заказ.`
+                              : "Свободен"}
+                          </Badge>
+
+                          <Link href={`${routes.orders}?work_bay_id=${bay.id}`}>
+                            <Button type="button" variant="secondary" size="sm">
+                              Заказы бокса
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     </CardHeader>
 
@@ -408,8 +439,22 @@ export function WorkBaySchedulePageClient() {
                           ))}
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-2))] p-6 text-center text-sm leading-6 text-[hsl(var(--muted))]">
-                          На выбранную дату в этом боксе нет заказов.
+                        <div className="rounded-2xl border border-dashed border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-2))] p-6 text-center">
+                          <div className="text-sm leading-6 text-[hsl(var(--muted))]">
+                            На выбранную дату в этом боксе нет заказов.
+                          </div>
+
+                          <div className="mt-4">
+                            <Link href={routes.newOrder}>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                              >
+                                Создать заказ
+                              </Button>
+                            </Link>
+                          </div>
                         </div>
                       )}
                     </CardContent>
@@ -434,8 +479,23 @@ export function WorkBaySchedulePageClient() {
                         ))}
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-2))] p-5 text-sm leading-6 text-[hsl(var(--muted))]">
-                        Все заказы на эту дату распределены по боксам.
+                      <div className="rounded-2xl border border-dashed border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-2))] p-5">
+                        <div className="text-sm leading-6 text-[hsl(var(--muted))]">
+                          Все заказы на эту дату распределены по боксам.
+                        </div>
+
+                        <div className="mt-4">
+                          <Link href={routes.newOrder}>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="w-full"
+                            >
+                              Создать заказ
+                            </Button>
+                          </Link>
+                        </div>
                       </div>
                     )}
                   </CardContent>
@@ -452,7 +512,11 @@ export function WorkBaySchedulePageClient() {
 
                   <CardContent>
                     <Link href={routes.orders}>
-                      <Button type="button" variant="secondary" className="w-full">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full"
+                      >
                         Открыть заказы
                       </Button>
                     </Link>

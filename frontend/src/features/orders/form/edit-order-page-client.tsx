@@ -40,6 +40,7 @@ import { OrderScheduleSection } from "@/src/features/orders/form/order-schedule-
 import { OrderItemsEditor } from "@/src/features/orders/form/order-items-editor";
 
 import { createDefaultOrderFormValues } from "@/src/features/orders/form/defaults";
+import { getOrderFormSubmitErrorMessage } from "@/src/features/orders/form/order-form-errors";
 import {
   mapFormValuesToUpdatePayload,
   mapOrderToFormValues,
@@ -305,7 +306,7 @@ export function EditOrderPageClient() {
       router.push(routes.orderDetails(updatedOrder.id));
       router.refresh();
     } catch (updateError) {
-      setSubmitError(getApiErrorMessage(updateError));
+      setSubmitError(getOrderFormSubmitErrorMessage(updateError));
     } finally {
       setIsSubmitting(false);
     }
@@ -422,6 +423,7 @@ export function EditOrderPageClient() {
       />
 
       <OrderScheduleSection
+        orderId={order.id}
         values={values}
         errors={errors}
         workBays={workBays}

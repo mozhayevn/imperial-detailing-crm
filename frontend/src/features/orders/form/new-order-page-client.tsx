@@ -38,6 +38,7 @@ import { OrderScheduleSection } from "@/src/features/orders/form/order-schedule-
 import { OrderItemsEditor } from "@/src/features/orders/form/order-items-editor";
 import { createDefaultOrderFormValues } from "@/src/features/orders/form/defaults";
 import { mapFormValuesToCreatePayload } from "@/src/features/orders/form/mappers";
+import { getOrderFormSubmitErrorMessage } from "@/src/features/orders/form/order-form-errors";
 import {
   getFirstOrderFormError,
   validateOrderForm,
@@ -277,7 +278,7 @@ export function NewOrderPageClient() {
       router.push(routes.orderDetails(createdOrder.id));
       router.refresh();
     } catch (createError) {
-      setSubmitError(getApiErrorMessage(createError));
+      setSubmitError(getOrderFormSubmitErrorMessage(createError));
     } finally {
       setIsSubmitting(false);
     }

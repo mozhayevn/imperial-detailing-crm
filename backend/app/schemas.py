@@ -1606,7 +1606,7 @@ class WorkBayScheduleOrderResponse(BaseModel):
     id: int
     client_id: int
     car_id: int
-    work_bay_id: int
+    work_bay_id: int | None = None
 
     client_name: str | None = None
     car_label: str | None = None
